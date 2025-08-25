@@ -105,3 +105,17 @@ make build-cli      # Build standalone CLI utility
 make test           # Run tests
 make clean          # Clean build artifacts
 ```
+
+## Contributing
+
+Please see our [Contributing Guidelines](CONTRIBUTING.md) for details on:
+
+- How to fork the repository and create pull requests
+- Semantic commit message format
+- Code formatting and quality standards
+- Development setup
+
+Before contributing, make sure to:
+- Format your code with `go fmt ./...`
+- Follow semantic commit message conventions
+- Create PRs from your own fork
