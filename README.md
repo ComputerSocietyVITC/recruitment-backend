@@ -42,6 +42,11 @@ DB_MIN_CONNS=2
 # Server Configuration
 PORT=8080
 GIN_MODE=debug
+
+# JWT Configuration
+JWT_SECRET=your-secret-key-change-in-production
+JWT_EXPIRY_DURATION=24h  # Optional: JWT token expiry duration (default: 24h)
+                         # Examples: 1h, 30m, 2h30m, 7d, 168h
 ```
 
 ## Configuration

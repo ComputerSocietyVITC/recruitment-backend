@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"time"
 )
 
 // ValidateRequiredEnvVars checks if all required environment variables are set
@@ -65,4 +66,25 @@ func GetEnvAsBool(key string, defaultValue bool) bool {
 		}
 	}
 	return defaultValue
+}
+
+// GetJWTExpiryDuration returns JWT expiry duration from environment variable
+// Default is 24 hours. Accepts values like "1h", "30m", "24h", "7d"
+func GetJWTExpiryDuration() time.Duration {
+	defaultDuration := 24 * time.Hour
+	expiryStr := GetEnvWithDefault("JWT_EXPIRY_DURATION", "24h")
+
+	duration, err := time.ParseDuration(expiryStr)
+	if err != nil {
+		log.Printf("Warning: Invalid duration format for JWT_EXPIRY_DURATION: %s, using default: %v", expiryStr, defaultDuration)
+		return defaultDuration
+	}
+
+	// Ensure minimum expiry of 1 minute for security
+	if duration < time.Minute {
+		log.Printf("Warning: JWT_EXPIRY_DURATION too short (%v), using minimum: 1m", duration)
+		return time.Minute
+	}
+
+	return duration
 }

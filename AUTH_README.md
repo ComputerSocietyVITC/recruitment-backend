@@ -15,6 +15,8 @@ Ensure these variables are set in your `.env` file:
 
 ```bash
 JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+JWT_EXPIRY_DURATION=24h  # Optional: JWT token expiry duration (default: 24h)
+                         # Examples: 1h, 30m, 2h30m, 7d, 168h
 ```
 
 ## API Endpoints
