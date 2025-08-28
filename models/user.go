@@ -21,8 +21,8 @@ type User struct {
 	ID             uuid.UUID `json:"id" db:"id"`
 	FullName       string    `json:"full_name" db:"full_name"`
 	Email          string    `json:"email" db:"email"`
-	PhoneNumber    *string   `json:"phone_number" db:"phone_number"` // Pointer for nullable field
-	HashedPassword string    `json:"-" db:"hashed_password"`         // JSON tag "-" to exclude from JSON serialization
+	PhoneNumber    string    `json:"phone_number" db:"phone_number"`
+	HashedPassword string    `json:"-" db:"hashed_password"` // JSON tag "-" to exclude from JSON serialization
 	Role           UserRole  `json:"role" db:"role"`
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`
@@ -32,7 +32,7 @@ type User struct {
 type CreateUserRequest struct {
 	FullName    string   `json:"full_name" binding:"required"`
 	Email       string   `json:"email" binding:"required,email"`
-	PhoneNumber *string  `json:"phone_number"`
+	PhoneNumber string   `json:"phone_number" binding:"required"`
 	Password    string   `json:"password" binding:"required,min=6"` // Plain password from request
 	Role        UserRole `json:"role,omitempty"`                    // Optional role field for admin creation
 }
@@ -54,7 +54,7 @@ type UserResponse struct {
 	ID          uuid.UUID `json:"id"`
 	FullName    string    `json:"full_name"`
 	Email       string    `json:"email"`
-	PhoneNumber *string   `json:"phone_number"`
+	PhoneNumber string    `json:"phone_number"`
 	Role        UserRole  `json:"role"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
