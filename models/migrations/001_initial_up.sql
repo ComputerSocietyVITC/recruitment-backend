@@ -83,7 +83,7 @@ VALUES (
     'Root',
     'admin@comp.socks',
     '+91 9898888110',
-    '$2a$10$WDlCHHvtqDcP9IbauQ0XPelvwU4t7Qaf9Gm9eb2cgXtX4M.oDUVJi',
+    '$2a$10$Q8Ltxi7JDz.VJydOo1d73eorls8XOL1OihDfSMwiZo.mJ0fNip.1C',
     'super_admin',
     NOW(),
     NOW()
