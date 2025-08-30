@@ -1,18 +1,21 @@
 package middleware
 
 import (
+	"log"
 	"net/http"
 	"strings"
 
 	"github.com/ComputerSocietyVITC/recruitment-backend/models"
 	"github.com/ComputerSocietyVITC/recruitment-backend/utils"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // JWTAuthMiddleware validates JWT tokens and sets user information in context
 func JWTAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
+		log.Println("Authorization Header Received:", authHeader)
 		if authHeader == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": "Authorization header is required",
@@ -31,7 +34,7 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 		}
 
 		tokenString := tokenParts[1]
-
+		log.Println("Extracted Token:", tokenString)
 		claims, err := utils.ValidateJWT(tokenString)
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{
@@ -40,13 +43,19 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+		userID, err := uuid.Parse(claims.UserID)
+		if err != nil {
+    	c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID in token"})
+    	c.Abort()
+    	return
+		}
 
-		// Set user information in context for use in handlers
-		c.Set("user_id", claims.UserID)
-		c.Set("user_email", claims.Email)
-		c.Set("user_role", claims.Role)
+		userRole := models.UserRole(claims.Role)
+
+		c.Set("userID", userID)
+		c.Set("userEmail", claims.Email)
+		c.Set("userRole", userRole)
 		c.Set("jwt_claims", claims)
-
 		c.Next()
 	}
 }
