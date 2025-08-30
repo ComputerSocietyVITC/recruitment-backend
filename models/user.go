@@ -18,14 +18,17 @@ const (
 
 // User represents a user in the system
 type User struct {
-	ID             uuid.UUID `json:"id" db:"id"`
-	FullName       string    `json:"full_name" db:"full_name"`
-	Email          string    `json:"email" db:"email"`
-	PhoneNumber    string    `json:"phone_number" db:"phone_number"`
-	HashedPassword string    `json:"-" db:"hashed_password"` // JSON tag "-" to exclude from JSON serialization
-	Role           UserRole  `json:"role" db:"role"`
-	CreatedAt      time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`
+	ID                  uuid.UUID `json:"id" db:"id"`
+	FullName            string    `json:"full_name" db:"full_name"`
+	Email               string    `json:"email" db:"email"`
+	PhoneNumber         string    `json:"phone_number" db:"phone_number"`
+	HashedPassword      string    `json:"-" db:"hashed_password"` // JSON tag "-" to exclude from JSON serialization
+	Verified            bool      `json:"verified" db:"verified"`
+	ResetToken          string    `json:"reset_token" db:"reset_token"`
+	ResetTokenExpiresAt time.Time `json:"reset_token_expires_at" db:"reset_token_expires_at"`
+	Role                UserRole  `json:"role" db:"role"`
+	CreatedAt           time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // CreateUserRequest represents the request body for creating a user
