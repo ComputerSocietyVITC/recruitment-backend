@@ -17,6 +17,11 @@ func ValidateRequiredEnvVars() error {
 		"DB_PASSWORD",
 		"DB_NAME",
 		"JWT_SECRET",
+		// SMTP configuration - Not mandatory for development, uncomment during production
+		/* "SMTP_HOST",
+		"SMTP_PORT",
+		"SMTP_USER",
+		"SMTP_PASSWORD", */
 	}
 
 	var missing []string
