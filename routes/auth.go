@@ -71,21 +71,33 @@ func Register(c *gin.Context) {
 		return
 	}
 
+	// Generate an OTP for verification
+	otp, err := utils.GenerateOTP()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to generate OTP",
+		})
+		return
+	}
+
 	user := models.User{
-		ID:             uuid.New(),
-		FullName:       req.FullName,
-		Email:          req.Email,
-		PhoneNumber:    req.PhoneNumber,
-		HashedPassword: string(hashedPassword),
-		Role:           req.Role,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
+		ID:                  uuid.New(),
+		FullName:            req.FullName,
+		Email:               req.Email,
+		PhoneNumber:         req.PhoneNumber,
+		HashedPassword:      string(hashedPassword),
+		Role:                req.Role,
+		Verified:            false,
+		ResetToken:          otp,
+		ResetTokenExpiresAt: time.Now().Add(10 * time.Minute),
+		CreatedAt:           time.Now(),
+		UpdatedAt:           time.Now(),
 	}
 
 	ctx := context.Background()
-	err = database.DB.QueryRow(ctx, queries.CreateUserQuery,
-		user.ID, user.FullName, user.Email, user.PhoneNumber,
-		user.HashedPassword, user.Role, user.CreatedAt, user.UpdatedAt,
+	err = database.DB.QueryRow(ctx, queries.CreateUserWithVerificationQuery,
+		user.ID, user.FullName, user.Email, user.PhoneNumber, user.Verified, user.ResetToken,
+		user.ResetTokenExpiresAt, user.HashedPassword, user.Role, user.CreatedAt, user.UpdatedAt,
 	).Scan(
 		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber,
 		&user.Role, &user.CreatedAt, &user.UpdatedAt,
@@ -99,18 +111,19 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	// Generate JWT token
-	token, err := utils.GenerateJWT(&user)
-	if err != nil {
+	subject := "Thank you for applying to IEEE CompSoc. Please verify your email address"
+	body := "Your OTP is: <strong>" + otp + "</strong>. It is valid for 10 minutes."
+	if err := utils.NewMailer().Send([]string{user.Email}, subject, body); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to generate authentication token",
+			"error":   "Failed to send verification email",
+			"details": err.Error(),
 		})
 		return
 	}
 
-	c.JSON(http.StatusCreated, models.AuthResponse{
-		User:  user.ToResponse(),
-		Token: token,
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "User created successfully. Please check your email for the verification code.",
+		"user": user.ToResponse(),
 	})
 }
 
