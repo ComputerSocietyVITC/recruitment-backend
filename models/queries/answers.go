@@ -1,7 +1,7 @@
 package queries
 
 const SaveAnswersQuery = `
-INSERT INTO answers (id, application_id, question_id, body, created_at, updated_at)
+INSERT INTO answers (id, application_id,user_id, question_id, body, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
 `
 

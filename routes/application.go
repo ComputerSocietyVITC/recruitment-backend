@@ -225,8 +225,13 @@ func SaveApplication(c *gin.Context) {
 		}
 
 		_, err := database.DB.Exec(ctx, queries.SaveAnswersQuery,
-			answer.ID, answer.ApplicationID,userID, answer.QuestionID,
-			answer.Body, answer.CreatedAt, answer.UpdatedAt,
+			answer.ID, 
+			answer.ApplicationID,
+			userID, 
+			answer.QuestionID,
+			answer.Body, 
+			answer.CreatedAt, 
+			answer.UpdatedAt,
 		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
