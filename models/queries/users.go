@@ -33,7 +33,7 @@ const (
 
 	// GetUserByEmailQuery retrieves a user by their email (for authentication)
 	GetUserByEmailQuery = `
-		SELECT id, full_name, email, phone_number, hashed_password, role, created_at, updated_at
+		SELECT id, full_name, email, phone_number, verified, reset_token, reset_token_expires_at, hashed_password, role, created_at, updated_at
 		FROM users
 		WHERE email = $1
 	`
@@ -44,5 +44,12 @@ const (
 		SET role = $2, updated_at = NOW()
 		WHERE id = $1
 		RETURNING id, full_name, email, phone_number, role, created_at, updated_at
+	`
+
+	UpdateUserVerificationStatusQuery = `
+		UPDATE users
+		SET verified = $2, reset_token = NULL, reset_token_expires_at = NULL, updated_at = NOW()
+		WHERE id = $1
+		RETURNING id, full_name, email, phone_number, verified, role, created_at, updated_at
 	`
 )

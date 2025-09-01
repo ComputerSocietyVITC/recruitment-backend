@@ -80,6 +80,8 @@ func Register(c *gin.Context) {
 		return
 	}
 
+	tokenExpiresAt := time.Now().Add(10 * time.Minute)
+
 	user := models.User{
 		ID:                  uuid.New(),
 		FullName:            req.FullName,
@@ -88,8 +90,8 @@ func Register(c *gin.Context) {
 		HashedPassword:      string(hashedPassword),
 		Role:                req.Role,
 		Verified:            false,
-		ResetToken:          otp,
-		ResetTokenExpiresAt: time.Now().Add(10 * time.Minute),
+		ResetToken:          &otp,
+		ResetTokenExpiresAt: &tokenExpiresAt,
 		CreatedAt:           time.Now(),
 		UpdatedAt:           time.Now(),
 	}
@@ -123,7 +125,73 @@ func Register(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "User created successfully. Please check your email for the verification code.",
-		"user": user.ToResponse(),
+		"user":    user.ToResponse(),
+	})
+}
+
+func VerifyOTP(c *gin.Context) {
+	var req models.VerifyOTPRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request body",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	ctx := context.Background()
+	var user models.User
+	err := database.DB.QueryRow(ctx, queries.GetUserByEmailQuery, req.Email).Scan(
+		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified, &user.ResetToken,
+		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.CreatedAt, &user.UpdatedAt,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "User not found",
+		})
+		return
+	}
+
+	if user.ResetTokenExpiresAt.Before(time.Now()) {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "OTP has expired",
+		})
+		return
+	}
+
+	if *user.ResetToken == req.Code {
+		err := database.DB.QueryRow(ctx, queries.UpdateUserVerificationStatusQuery, user.ID, true).Scan(
+			&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified, &user.Role, &user.CreatedAt, &user.UpdatedAt,
+		)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to update user verification status",
+				"details": err.Error(),
+			})
+			return
+		}
+	} else {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "Invalid OTP",
+		})
+		return
+	}
+
+	token, err := utils.GenerateJWT(&user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to generate authentication token",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "User verified successfully",
+		"user":    user.ToResponse(),
+		"token":   token,
 	})
 }
 
@@ -142,13 +210,20 @@ func Login(c *gin.Context) {
 	var user models.User
 
 	err := database.DB.QueryRow(ctx, queries.GetUserByEmailQuery, req.Email).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber,
-		&user.HashedPassword, &user.Role, &user.CreatedAt, &user.UpdatedAt,
+		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified, &user.ResetToken,
+		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "Invalid email or password",
+		})
+		return
+	}
+
+	if !user.Verified {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "User email is not verified",
 		})
 		return
 	}
