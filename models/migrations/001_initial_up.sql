@@ -42,6 +42,25 @@ CREATE TABLE IF NOT EXISTS questions (
     body TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+INSERT INTO questions (id, department, body, created_at) VALUES
+-- Technical questions
+('11111111-1111-1111-1111-111111111111', 'technical', 'What is your full name?', NOW()),
+('22222222-2222-2222-2222-222222222222', 'technical', 'Why do you want to join our team?', NOW()),
+('33333333-3333-3333-3333-333333333333', 'technical', 'What programming languages do you know?', NOW()),
+('44444444-4444-4444-4444-444444444444', 'technical', 'Describe a project you built recently', NOW()),
+
+-- Marketing questions
+('55555555-5555-5555-5555-555555555555', 'marketing', 'What marketing strategies are you familiar with?', NOW()),
+('66666666-6666-6666-6666-666666666666', 'marketing', 'How would you promote our brand?', NOW()),
+
+-- Management questions  
+('77777777-7777-7777-7777-777777777777', 'management', 'How do you handle team conflicts?', NOW()),
+('88888888-8888-8888-8888-888888888888', 'management', 'Describe your leadership style', NOW()),
+
+-- Social media questions
+('99999999-9999-9999-9999-999999999999', 'social_media', 'Which social media platforms are you experienced with?', NOW()),
+('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'social_media', 'How would you grow our social media presence?', NOW());
+
 
 -- Create applications table
 CREATE TABLE IF NOT EXISTS applications (

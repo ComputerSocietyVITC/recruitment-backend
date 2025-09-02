@@ -2,18 +2,19 @@ package utils
 
 import (
 	"errors"
+	"log"
 	"time"
 
 	"github.com/ComputerSocietyVITC/recruitment-backend/models"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
+	
 )
 
 // JWTClaims represents the JWT claims structure
 type JWTClaims struct {
-	UserID uuid.UUID       `json:"user_id"`
-	Email  string          `json:"email"`
-	Role   models.UserRole `json:"role"`
+	UserID string `json:"user_id"`  // ← string
+	Email  string `json:"email"`    // ← string  
+	Role   string `json:"role"`     // ← string
 	jwt.RegisteredClaims
 }
 
@@ -34,15 +35,15 @@ func GenerateJWT(user *models.User) (string, error) {
 	expirationTime := time.Now().Add(GetJWTExpiryDuration())
 
 	claims := &JWTClaims{
-		UserID: user.ID,
-		Email:  user.Email,
-		Role:   user.Role,
+		UserID: user.ID.String(),   // ← Convert UUID to string
+		Email:  user.Email,         // ← Already string
+		Role:   string(user.Role),  // ← Convert UserRole to string
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
 			Issuer:    "recruitment-backend",
-			Subject:   user.ID.String(),
+			Subject:   user.ID.String(), // ← Convert to string
 		},
 	}
 
@@ -66,6 +67,7 @@ func ValidateJWT(tokenString string) (*JWTClaims, error) {
 	})
 
 	if err != nil {
+		log.Println("JWT Parsing Error:", err)
 		return nil, err
 	}
 

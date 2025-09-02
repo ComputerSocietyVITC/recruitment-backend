@@ -90,6 +90,15 @@ func main() {
 			auth.POST("/login", routes.Login)                                       // POST /api/v1/auth/login
 			auth.POST("/refresh", routes.RefreshToken)                              // POST /api/v1/auth/refresh
 			auth.GET("/profile", middleware.JWTAuthMiddleware(), routes.GetProfile) // GET /api/v1/auth/profile
+
+		}
+		applications := v1.Group("/applications")
+		applications.Use(middleware.JWTAuthMiddleware()) // All application routes require authentication
+		{
+			applications.GET("", routes.GetAllApplications)   // GET /api/v1/applications (get all apps)
+			applications.POST("", routes.CreateApplication)   // POST /api/v1/applications (create new app)
+			applications.GET("/me", routes.GetMyApplications) // GET /api/v1/applications/me (get user's apps)
+			applications.PATCH("/:id/save", routes.SaveApplication)
 		}
 
 		// User routes (protected)
