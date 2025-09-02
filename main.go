@@ -102,6 +102,12 @@ func main() {
 			applications.PATCH("/:id/save", routes.SaveApplication)
 		}
 
+		// Questions routes (public)
+		questions := v1.Group("/questions")
+		{
+			questions.GET("", routes.GetQuestions) // GET /api/v1/questions?dept=tech
+		}
+
 		// User routes (protected)
 		users := v1.Group("/users")
 		users.Use(middleware.JWTAuthMiddleware()) // All user routes require authentication
