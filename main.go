@@ -86,6 +86,7 @@ func main() {
 		auth := v1.Group("/auth")
 		{
 			auth.POST("/register", routes.Register)                                 // POST /api/v1/auth/register
+			auth.POST("/verify-otp", routes.VerifyOTP)                              // POST /api/v1/auth/verify-otp
 			auth.POST("/login", routes.Login)                                       // POST /api/v1/auth/login
 			auth.POST("/refresh", routes.RefreshToken)                              // POST /api/v1/auth/refresh
 			auth.GET("/profile", middleware.JWTAuthMiddleware(), routes.GetProfile) // GET /api/v1/auth/profile
