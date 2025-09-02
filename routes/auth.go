@@ -195,6 +195,71 @@ func VerifyOTP(c *gin.Context) {
 	})
 }
 
+// ResendOTP handles POST /auth/resend-otp - resends the OTP to the user's email
+func ResendOTP(c *gin.Context) {
+	var req struct {
+		Email string `json:"email" binding:"required,email"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid request body",
+		})
+		return
+	}
+
+	ctx := context.Background()
+	var user models.User
+	err := database.DB.QueryRow(ctx, queries.GetUserByEmailQuery, req.Email).Scan(
+		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified, &user.ResetToken,
+		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.CreatedAt, &user.UpdatedAt,
+	)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "User not found",
+		})
+		return
+	}
+
+	otp := user.ResetToken
+	expiresAt := user.ResetTokenExpiresAt
+
+	if expiresAt == nil || time.Now().After(*expiresAt) {
+		newOTP, err := utils.GenerateOTP()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"details": "Failed to generate OTP",
+				"error":   err.Error(),
+			})
+		}
+
+		otp = &newOTP
+		newExpiresAt := time.Now().Add(10 * time.Minute)
+		expiresAt = &newExpiresAt
+
+		_, err = database.DB.Exec(ctx, queries.UpdateResetTokenQuery, user.ID, otp, expiresAt)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to update OTP",
+			})
+			return
+		}
+	}
+
+	subject := "New OTP for IEEE CompSoc"
+	body := "Your OTP is: <strong>" + *otp + "</strong>. It is valid for 10 minutes."
+	if err := utils.GetMailerInstance().Send([]string{user.Email}, subject, body); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to send verification email",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "OTP resent successfully",
+	})
+}
+
 // Login handles POST /auth/login - authenticates a user
 func Login(c *gin.Context) {
 	var req models.LoginRequest

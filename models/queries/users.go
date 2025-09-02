@@ -46,10 +46,18 @@ const (
 		RETURNING id, full_name, email, phone_number, role, created_at, updated_at
 	`
 
+	// UpdateUserVerificationStatusQuery updates a user's email verification status
 	UpdateUserVerificationStatusQuery = `
 		UPDATE users
 		SET verified = $2, reset_token = NULL, reset_token_expires_at = NULL, updated_at = NOW()
 		WHERE id = $1
 		RETURNING id, full_name, email, phone_number, verified, role, created_at, updated_at
+	`
+
+	// UpdateResetTokenQuery updates a user's reset token
+	UpdateResetTokenQuery = `
+		UPDATE users
+		SET reset_token = $2, reset_token_expires_at = $3, updated_at = NOW()
+		WHERE id = $1
 	`
 )
