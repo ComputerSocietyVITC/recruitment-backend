@@ -115,7 +115,7 @@ func Register(c *gin.Context) {
 
 	subject := "Thank you for applying to IEEE CompSoc. Please verify your email address"
 	body := "Your OTP is: <strong>" + otp + "</strong>. It is valid for 10 minutes."
-	if err := utils.NewMailer().Send([]string{user.Email}, subject, body); err != nil {
+	if err := utils.GetMailerInstance().Send([]string{user.Email}, subject, body); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Failed to send verification email",
 			"details": err.Error(),

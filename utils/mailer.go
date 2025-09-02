@@ -22,7 +22,16 @@ type mailerConfig struct {
 	Port     int
 }
 
-func NewMailer() *Mailer {
+var MailerInstance *Mailer
+
+func GetMailerInstance() *Mailer {
+	if MailerInstance == nil {
+		MailerInstance = CreateMailerInstance()
+	}
+	return MailerInstance
+}
+
+func CreateMailerInstance() *Mailer {
 	port, err := strconv.Atoi(os.Getenv("SMTP_PORT"))
 	if err != nil {
 		log.Printf("Warning: SMTP_PORT is not a valid integer, defaulting to 587. Error: %v", err)
