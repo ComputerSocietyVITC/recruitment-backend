@@ -349,7 +349,7 @@ func RefreshToken(c *gin.Context) {
 
 // GetProfile handles GET /auth/profile - gets current user profile
 func GetProfile(c *gin.Context) {
-	userID, exists := c.Get("user_id")
+	userID, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "User ID not found in token",
