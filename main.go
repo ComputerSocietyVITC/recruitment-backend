@@ -91,7 +91,8 @@ func main() {
 			auth.POST("/login", routes.Login)                                                               // POST /api/v1/auth/login
 			auth.POST("/refresh", routes.RefreshToken)                                                      // POST /api/v1/auth/refresh
 			auth.GET("/profile", middleware.JWTAuthMiddleware(), routes.GetProfile)                         // GET /api/v1/auth/profile
-
+			auth.POST("/forgot-password", routes.ForgotPassword)                                            // POST /api/v1/auth/forgot-password
+			auth.POST("/reset-password", routes.ResetPassword)                                              // POST /api/v1/auth/reset-password
 		}
 		applications := v1.Group("/applications")
 		applications.Use(middleware.JWTAuthMiddleware()) // All application routes require authentication

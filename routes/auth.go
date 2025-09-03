@@ -230,6 +230,7 @@ func ResendOTP(c *gin.Context) {
 				"details": "Failed to generate OTP",
 				"error":   err.Error(),
 			})
+			return
 		}
 
 		otp = &newOTP
@@ -372,4 +373,120 @@ func GetProfile(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, user.ToResponse())
+}
+
+// ForgotPassword handles POST /auth/forgot-password - initiates password reset
+func ForgotPassword(c *gin.Context) {
+	var req struct {
+		Email string `json:"email" binding:"required,email"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request body",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	ctx := context.Background()
+	var user models.User
+	err := database.DB.QueryRow(ctx, queries.GetUserByEmailQuery, req.Email).Scan(
+		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified, &user.ResetToken,
+		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.CreatedAt, &user.UpdatedAt,
+	)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "User not found",
+		})
+		return
+	}
+
+	otp, err := utils.GenerateOTP()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to generate OTP",
+		})
+		return
+	}
+	expiresAt := time.Now().Add(10 * time.Minute)
+
+	_, err = database.DB.Exec(ctx, queries.UpdateResetTokenQuery, user.ID, &otp, &expiresAt)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to update OTP",
+		})
+		return
+	}
+
+	subject := "IEEE CompSoc - Password Reset OTP"
+	body := "Your password reset OTP is: <strong>" + otp + "</strong>. It is valid for 10 minutes."
+	if err := utils.GetMailerInstance().Send([]string{user.Email}, subject, body); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to send OTP email",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Password reset OTP sent successfully",
+	})
+}
+
+// ResetPassword handles POST /auth/reset-password - resets the user's password
+func ResetPassword(c *gin.Context) {
+	var req models.ResetPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request body",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	ctx := context.Background()
+	var user models.User
+	err := database.DB.QueryRow(ctx, queries.GetUserByEmailQuery, req.Email).Scan(
+		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified, &user.ResetToken,
+		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.CreatedAt, &user.UpdatedAt,
+	)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "User not found",
+		})
+		return
+	}
+
+	if user.ResetToken == nil || user.ResetTokenExpiresAt == nil || user.ResetTokenExpiresAt.Before(time.Now()) {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "OTP has expired",
+		})
+		return
+	}
+
+	if *user.ResetToken != req.Code {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "Invalid OTP",
+		})
+		return
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to process password",
+		})
+		return
+	}
+
+	_, err = database.DB.Exec(ctx, queries.UpdatePasswordQuery, user.ID, string(hashedPassword))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to update password",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Password reset successfully",
+	})
 }

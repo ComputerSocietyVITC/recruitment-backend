@@ -60,4 +60,11 @@ const (
 		SET reset_token = $2, reset_token_expires_at = $3, updated_at = NOW()
 		WHERE id = $1
 	`
+
+	// UpdatePasswordQuery updates a user's password
+	UpdatePasswordQuery = `
+		UPDATE users
+		SET hashed_password = $2, reset_token = NULL, reset_token_expires_at = NULL, updated_at = NOW()
+		WHERE id = $1
+	`
 )
