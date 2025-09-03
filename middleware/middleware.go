@@ -45,9 +45,9 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 		}
 		userID, err := uuid.Parse(claims.UserID)
 		if err != nil {
-    	c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID in token"})
-    	c.Abort()
-    	return
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID in token"})
+			c.Abort()
+			return
 		}
 
 		userRole := models.UserRole(claims.Role)
