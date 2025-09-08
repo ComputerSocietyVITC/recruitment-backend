@@ -97,10 +97,10 @@ func main() {
 		applications := v1.Group("/applications")
 		applications.Use(middleware.JWTAuthMiddleware()) // All application routes require authentication
 		{
-			applications.GET("", routes.GetAllApplications)   // GET /api/v1/applications (get all apps)
-			applications.POST("", routes.CreateApplication)   // POST /api/v1/applications (create new app)
-			applications.GET("/me", routes.GetMyApplications) // GET /api/v1/applications/me (get user's apps)
-			applications.PATCH("/:id/save", routes.SaveApplication)
+			applications.GET("", middleware.RateLimit("30-M"), routes.GetAllApplications)         // 30 GETs per minute
+			applications.POST("", middleware.RateLimit("5-M"), routes.CreateApplication)          // 5 POSTs per minute
+			applications.GET("/me", middleware.RateLimit("30-M"), routes.GetMyApplications)       // 30 GETs per minute
+			applications.PATCH("/:id/save", middleware.RateLimit("10-M"), routes.SaveApplication) // 10 PATCHs per minute
 		}
 
 		// Questions routes (public)

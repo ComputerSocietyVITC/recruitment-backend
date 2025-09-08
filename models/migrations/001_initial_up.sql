@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS questions (
     department department NOT NULL,
     body TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    UNIQUE(application_id, question_id)
 );
 INSERT INTO questions (id, department, body, created_at) VALUES
 -- Technical questions

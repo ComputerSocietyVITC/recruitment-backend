@@ -7,14 +7,13 @@ import (
 
 	"github.com/ComputerSocietyVITC/recruitment-backend/models"
 	"github.com/golang-jwt/jwt/v5"
-	
 )
 
 // JWTClaims represents the JWT claims structure
 type JWTClaims struct {
-	UserID string `json:"user_id"`  // ← string
-	Email  string `json:"email"`    // ← string  
-	Role   string `json:"role"`     // ← string
+	UserID string `json:"user_id"` // ← string
+	Email  string `json:"email"`   // ← string
+	Role   string `json:"role"`    // ← string
 	jwt.RegisteredClaims
 }
 
@@ -35,9 +34,9 @@ func GenerateJWT(user *models.User) (string, error) {
 	expirationTime := time.Now().Add(GetJWTExpiryDuration())
 
 	claims := &JWTClaims{
-		UserID: user.ID.String(),   // ← Convert UUID to string
-		Email:  user.Email,         // ← Already string
-		Role:   string(user.Role),  // ← Convert UserRole to string
+		UserID: user.ID.String(),  // ← Convert UUID to string
+		Email:  user.Email,        // ← Already string
+		Role:   string(user.Role), // ← Convert UserRole to string
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
