@@ -18,3 +18,19 @@ FROM applications
 WHERE user_id = $1
 ORDER BY created_at DESC
 `
+
+const SubmitApplicationQuery = `
+UPDATE applications 
+SET submitted = true, updated_at = $2
+WHERE id = $1 AND user_id = $3
+RETURNING id, user_id, department, submitted, created_at, updated_at
+`
+
+const DeleteApplicationQuery = `
+DELETE FROM applications 
+WHERE id = $1 AND user_id = $2 AND submitted = false
+`
+
+const CountUserApplicationsQuery = `
+SELECT COUNT(*) FROM applications WHERE user_id = $1
+`

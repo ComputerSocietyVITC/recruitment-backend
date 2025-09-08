@@ -2,21 +2,25 @@ package routes
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
-	"github.com/ComputerSocietyVITC/recruitment-backend/database"
 	"github.com/ComputerSocietyVITC/recruitment-backend/models"
 	"github.com/ComputerSocietyVITC/recruitment-backend/models/queries"
+	"github.com/ComputerSocietyVITC/recruitment-backend/services"
+	"github.com/ComputerSocietyVITC/recruitment-backend/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// GetAllApplications handles GET /applications - fetches all applications
+// GetAllApplications fetches all applications
 func GetAllApplications(c *gin.Context) {
 	ctx := context.Background()
 
-	rows, err := database.DB.Query(ctx, queries.GetAllApplicationsQuery)
+	rows, err := services.DB.Query(ctx, queries.GetAllApplicationsQuery)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Failed to fetch applications",
@@ -26,11 +30,11 @@ func GetAllApplications(c *gin.Context) {
 	}
 	defer rows.Close()
 
-	var applications []models.ApplicationResponse
+	var applications []models.Application
 	for rows.Next() {
 		var app models.Application
 
-		// Scan application fields
+		// Updated scan to match actual database columns: id, user_id, department, submitted, created_at, updated_at
 		err := rows.Scan(
 			&app.ID, &app.UserID, &app.Department, &app.Submitted,
 			&app.CreatedAt, &app.UpdatedAt,
@@ -42,7 +46,7 @@ func GetAllApplications(c *gin.Context) {
 			})
 			return
 		}
-		applications = append(applications, app.ToResponse())
+		applications = append(applications, app)
 	}
 
 	if err = rows.Err(); err != nil {
@@ -95,7 +99,31 @@ func CreateApplication(c *gin.Context) {
 
 	ctx := context.Background()
 
-	err := database.DB.QueryRow(ctx, queries.CreateApplicationQuery,
+	// Check if user has reached the maximum number of applications
+	maxApplications := utils.GetEnvAsInt("MAXIMUM_APPLICATIONS_PER_USER", 2) // Default to 3 if not set
+	var currentCount int
+	err := services.DB.QueryRow(ctx, queries.CountUserApplicationsQuery, userID).Scan(&currentCount)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to check application count",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	if currentCount >= maxApplications {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "Maximum number of applications reached",
+			"details": map[string]interface{}{
+				"current_applications": currentCount,
+				"maximum_allowed":      maxApplications,
+				"message":              "You have reached the maximum number of applications allowed per user",
+			},
+		})
+		return
+	}
+
+	err = services.DB.QueryRow(ctx, queries.CreateApplicationQuery,
 		application.ID, application.UserID, application.Department,
 		application.Submitted, application.CreatedAt, application.UpdatedAt,
 	).Scan(
@@ -104,6 +132,21 @@ func CreateApplication(c *gin.Context) {
 	)
 
 	if err != nil {
+		// Check if this is a unique constraint violation
+		if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code == "23505" {
+			// Check if the constraint name contains user_id and department
+			if strings.Contains(pgErr.ConstraintName, "user_id") && strings.Contains(pgErr.ConstraintName, "department") {
+				c.JSON(http.StatusConflict, gin.H{
+					"error": "You have already created an application for this department",
+					"details": map[string]interface{}{
+						"department": req.Department,
+						"message":    "Only one application per department is allowed per user",
+					},
+				})
+				return
+			}
+		}
+
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Failed to create application",
 			"details": err.Error(),
@@ -113,7 +156,7 @@ func CreateApplication(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message":     "Application created successfully",
-		"application": application.ToResponse(),
+		"application": application,
 	})
 }
 
@@ -133,7 +176,7 @@ func GetMyApplications(c *gin.Context) {
 	}
 
 	ctx := context.Background()
-	rows, err := database.DB.Query(ctx, queries.GetUserApplicationsQuery, userID)
+	rows, err := services.DB.Query(ctx, queries.GetUserApplicationsQuery, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Failed to fetch your applications",
@@ -143,10 +186,11 @@ func GetMyApplications(c *gin.Context) {
 	}
 	defer rows.Close()
 
-	var applications []models.ApplicationResponse
+	var applications []models.Application
 	for rows.Next() {
 		var app models.Application
 
+		// Updated scan to match actual database columns
 		err := rows.Scan(
 			&app.ID, &app.UserID, &app.Department, &app.Submitted,
 			&app.CreatedAt, &app.UpdatedAt,
@@ -158,7 +202,7 @@ func GetMyApplications(c *gin.Context) {
 			})
 			return
 		}
-		applications = append(applications, app.ToResponse())
+		applications = append(applications, app)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -169,14 +213,110 @@ func GetMyApplications(c *gin.Context) {
 }
 
 // SaveApplication handles PATCH /applications/:id/save - saves application answers
-// SaveApplication handles PATCH /applications/:id/save - saves application answers
-// SaveApplication handles PATCH /applications/:id/save - saves application answers
-// SaveApplication handles PATCH /applications/:id/save - saves application answers
-// SaveApplication handles PATCH /applications/:id/save - saves application answers
-// SaveApplication handles PATCH /applications/:id/save - saves application answers
 func SaveApplication(c *gin.Context) {
+
+	// Get application ID from URL
+	applicationIDStr := c.Param("id")
+	applicationID, err := uuid.Parse(applicationIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid application ID"})
+		return
+	}
+
+	// Parse request body
+	var req models.SaveApplicationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request body",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Get user ID from JWT token
+	userIDInterface, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+	userID := userIDInterface.(uuid.UUID)
+
 	ctx := context.Background()
 
+	// Verify user owns this application
+	var appUserID uuid.UUID
+	err = services.DB.QueryRow(ctx, queries.CheckApplicationOwnershipQuery, applicationID).Scan(&appUserID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Application not found"})
+		return
+	}
+	if appUserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+		return
+	}
+
+	// Upsert each answer
+	for _, answerReq := range req.Answers {
+		// Validate that question department matches application department
+		var appDepartment, questionDepartment string
+		fmt.Println("Validating question", answerReq.QuestionID, "for application", applicationID)
+		err = services.DB.QueryRow(ctx, queries.ValidateQuestionApplicationDepartmentQuery, applicationID, answerReq.QuestionID).Scan(&appDepartment, &questionDepartment)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Application or question not found",
+				"details": map[string]any{
+					"question_id": answerReq.QuestionID,
+					"error":       err.Error(),
+				},
+			})
+			return
+		}
+		if appDepartment != questionDepartment {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Question department does not match application department",
+				"details": map[string]any{
+					"question_id":            answerReq.QuestionID,
+					"application_department": appDepartment,
+					"question_department":    questionDepartment,
+				},
+			})
+			return
+		}
+
+		answer := models.Answer{
+			ID:            uuid.New(),
+			ApplicationID: applicationID,
+			QuestionID:    answerReq.QuestionID,
+			Body:          answerReq.Body,
+			CreatedAt:     time.Now(),
+			UpdatedAt:     time.Now(),
+		}
+
+		_, err := services.DB.Exec(ctx, queries.UpsertAnswerQuery,
+			answer.ID,
+			answer.ApplicationID,
+			userID,
+			answer.QuestionID,
+			answer.Body,
+			answer.CreatedAt,
+			answer.UpdatedAt,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to save answers",
+				"details": err.Error(),
+			})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Answers saved successfully",
+	})
+}
+
+// SubmitApplication handles POST /applications/:id/submit - submits an application
+func SubmitApplication(c *gin.Context) {
 	// Get application ID from URL
 	applicationIDStr := c.Param("id")
 	applicationID, err := uuid.Parse(applicationIDStr)
@@ -193,81 +333,67 @@ func SaveApplication(c *gin.Context) {
 	}
 	userID := userIDInterface.(uuid.UUID)
 
-	// ✅ FIX: Use correct request model
-	var req models.SaveApplicationRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "Invalid request body",
+	ctx := context.Background()
+
+	// Submit the application
+	var application models.Application
+	err = services.DB.QueryRow(ctx, queries.SubmitApplicationQuery,
+		applicationID, time.Now(), userID).Scan(
+		&application.ID, &application.UserID, &application.Department,
+		&application.Submitted, &application.CreatedAt, &application.UpdatedAt,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":   "Application not found or access denied",
 			"details": err.Error(),
 		})
 		return
 	}
 
-	// ✅ CRITICAL: Verify user owns this application
-	var appUserID uuid.UUID
-	err = database.DB.QueryRow(ctx, queries.CheckApplicationOwnershipQuery, applicationID).Scan(&appUserID)
+	c.JSON(http.StatusOK, gin.H{
+		"message":     "Application submitted successfully",
+		"application": application,
+	})
+}
+
+// DeleteApplication handles DELETE /applications/:id - deletes an application
+func DeleteApplication(c *gin.Context) {
+	// Get application ID from URL
+	applicationIDStr := c.Param("id")
+	applicationID, err := uuid.Parse(applicationIDStr)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Application not found"})
-		return
-	}
-	if appUserID != userID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid application ID"})
 		return
 	}
 
-	// ✅ Use transaction for atomic operations
-	tx, err := database.DB.Begin(ctx)
+	// Get user ID from JWT token
+	userIDInterface, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+	userID := userIDInterface.(uuid.UUID)
+
+	ctx := context.Background()
+
+	// Delete the application (this will cascade delete all associated answers)
+	result, err := services.DB.Exec(ctx, queries.DeleteApplicationQuery, applicationID, userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start transaction"})
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to delete application",
+			"details": err.Error(),
+		})
 		return
 	}
-	defer tx.Rollback(ctx)
 
-	// Save each answer
-	for _, answerReq := range req.Answers {
-		var existingID uuid.UUID
-		err := tx.QueryRow(ctx,
-			"SELECT id FROM answers WHERE application_id = $1 AND question_id = $2",
-			applicationID, answerReq.QuestionID,
-		).Scan(&existingID)
-
-		if err == nil {
-			// UPDATE existing answer
-			_, err = tx.Exec(ctx,
-				"UPDATE answers SET body = $1, updated_at = $2 WHERE id = $3",
-				answerReq.Body, time.Now(), existingID,
-			)
-		} else {
-			// INSERT new answer
-			_, err = tx.Exec(ctx, queries.SaveAnswersQuery,
-				uuid.New(),
-				applicationID,
-				userID,
-				answerReq.QuestionID,
-				answerReq.Body,
-				time.Now(),
-				time.Now(),
-			)
-		}
-
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Failed to save answers",
-				"details": err.Error(),
-			})
-			return
-		}
-	}
-
-	// Commit transaction
-	if err := tx.Commit(ctx); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save changes"})
+	rowsAffected := result.RowsAffected()
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Application not found or access denied"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"status":        "draft_saved",
-		"saved_at":      time.Now().Format(time.RFC3339),
-		"saved_answers": len(req.Answers),
+		"message": "Application deleted successfully",
 	})
 }

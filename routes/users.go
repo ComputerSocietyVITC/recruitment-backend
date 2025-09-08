@@ -3,11 +3,10 @@ package routes
 import (
 	"context"
 	"net/http"
-	"time"
 
-	"github.com/ComputerSocietyVITC/recruitment-backend/database"
 	"github.com/ComputerSocietyVITC/recruitment-backend/models"
 	"github.com/ComputerSocietyVITC/recruitment-backend/models/queries"
+	"github.com/ComputerSocietyVITC/recruitment-backend/services"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -29,6 +28,32 @@ func CreateUser(c *gin.Context) {
 		req.Role = models.RoleApplicant
 	}
 
+	userRole, exists := c.Get("userRole")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "User role not found in context",
+		})
+		c.Abort()
+		return
+	}
+	role, ok := userRole.(models.UserRole)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Invalid user role format",
+		})
+		c.Abort()
+		return
+	}
+	// Only super admins can create super admins
+	if req.Role == models.RoleSuperAdmin {
+		if role != models.RoleSuperAdmin {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "Only super admins can create super admins",
+			})
+			return
+		}
+	}
+
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -38,23 +63,24 @@ func CreateUser(c *gin.Context) {
 	}
 
 	user := models.User{
-		ID:             uuid.New(),
-		FullName:       req.FullName,
-		Email:          req.Email,
-		PhoneNumber:    req.PhoneNumber,
-		HashedPassword: string(hashedPassword),
-		Role:           req.Role,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
+		FullName:            req.FullName,
+		Email:               req.Email,
+		PhoneNumber:         req.PhoneNumber,
+		Verified:            false,
+		ResetToken:          nil,
+		ResetTokenExpiresAt: nil,
+		HashedPassword:      string(hashedPassword),
+		Role:                req.Role,
 	}
 
 	ctx := context.Background()
-	err = database.DB.QueryRow(ctx, queries.CreateUserQuery,
-		user.ID, user.FullName, user.Email, user.PhoneNumber,
-		user.HashedPassword, user.Role, user.CreatedAt, user.UpdatedAt,
+	err = services.DB.QueryRow(ctx, queries.CreateUserQuery,
+		user.FullName, user.Email, user.PhoneNumber, user.Verified,
+		user.ResetToken, user.ResetTokenExpiresAt,
+		user.HashedPassword, user.Role,
 	).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber,
-		&user.Role, &user.CreatedAt, &user.UpdatedAt,
+		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified,
+		&user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err != nil {
@@ -83,7 +109,7 @@ func CreateUser(c *gin.Context) {
 // GetAllUsers handles GET /users - fetches all users
 func GetAllUsers(c *gin.Context) {
 	ctx := context.Background()
-	rows, err := database.DB.Query(ctx, queries.GetAllUsersQuery)
+	rows, err := services.DB.Query(ctx, queries.GetAllUsersQuery)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Failed to fetch users",
@@ -97,8 +123,8 @@ func GetAllUsers(c *gin.Context) {
 	for rows.Next() {
 		var user models.User
 		err := rows.Scan(
-			&user.ID, &user.FullName, &user.Email, &user.PhoneNumber,
-			&user.Role, &user.CreatedAt, &user.UpdatedAt,
+			&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified,
+			&user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
 		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -138,9 +164,140 @@ func GetUserByID(c *gin.Context) {
 
 	ctx := context.Background()
 	var user models.User
-	err = database.DB.QueryRow(ctx, queries.GetUserByIDQuery, userID).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber,
-		&user.Role, &user.CreatedAt, &user.UpdatedAt,
+	err = services.DB.QueryRow(ctx, queries.GetUserByIDQuery, userID).Scan(
+		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified,
+		&user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
+	)
+
+	if err != nil {
+		if err.Error() == "no rows in result set" {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "User not found",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to fetch user",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "User fetched successfully",
+		"user":    user.ToResponse(),
+	})
+}
+
+// DeleteUser handles DELETE /users/:id - deletes a user by ID
+func DeleteUser(c *gin.Context) {
+	idStr := c.Param("id")
+	userID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid user ID format",
+		})
+		return
+	}
+
+	// Check if the user exists first
+	ctx := context.Background()
+	var existingUser models.User
+	err = services.DB.QueryRow(ctx, queries.GetUserByIDQuery, userID).Scan(
+		&existingUser.ID, &existingUser.FullName, &existingUser.Email, &existingUser.PhoneNumber,
+		&existingUser.Verified, &existingUser.Role, &existingUser.ChickenedOut, &existingUser.CreatedAt, &existingUser.UpdatedAt,
+	)
+
+	if err != nil {
+		if err.Error() == "no rows in result set" {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "User not found",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to fetch user",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Get the current user's role to check permissions
+	userRole, exists := c.Get("userRole")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "User role not found in context",
+		})
+		return
+	}
+
+	role, ok := userRole.(models.UserRole)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Invalid user role format",
+		})
+		return
+	}
+
+	// Only super admins can delete super admins
+	if existingUser.Role == models.RoleSuperAdmin && role != models.RoleSuperAdmin {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "Only super admins can delete super admins",
+		})
+		return
+	}
+
+	// Prevent users from deleting themselves
+	userIDFromContext, exists := c.Get("userID")
+	if exists {
+		if currentUserID, ok := userIDFromContext.(uuid.UUID); ok && currentUserID == userID {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Cannot delete your own account",
+			})
+			return
+		}
+	}
+
+	// Delete the user
+	result, err := services.DB.Exec(ctx, queries.DeleteUserQuery, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to delete user",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	rowsAffected := result.RowsAffected()
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "User not found",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "User deleted successfully",
+	})
+}
+
+// GetUserByEmail handles GET /users/email/:email - fetches a user by email
+func GetUserByEmail(c *gin.Context) {
+	email := c.Param("email")
+	if email == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Email parameter is required",
+		})
+		return
+	}
+
+	ctx := context.Background()
+	var user models.User
+	err := services.DB.QueryRow(ctx, queries.GetUserByEmailPublicQuery, email).Scan(
+		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified,
+		&user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err != nil {

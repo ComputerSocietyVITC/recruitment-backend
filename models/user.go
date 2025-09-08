@@ -24,6 +24,7 @@ type User struct {
 	PhoneNumber         string     `json:"phone_number" db:"phone_number"`
 	HashedPassword      string     `json:"-" db:"hashed_password"` // JSON tag "-" to exclude from JSON serialization
 	Verified            bool       `json:"verified" db:"verified"`
+	ChickenedOut        bool       `json:"chickened_out" db:"chickened_out"`
 	ResetToken          *string    `json:"reset_token" db:"reset_token"`
 	ResetTokenExpiresAt *time.Time `json:"reset_token_expires_at" db:"reset_token_expires_at"`
 	Role                UserRole   `json:"role" db:"role"`
@@ -46,16 +47,26 @@ type VerifyOTPRequest struct {
 	Code  string `json:"code" binding:"required,len=6"`
 }
 
+// ResendOTPRequest represents the request body for resending verification OTP
+type ResendOTPRequest struct {
+	Email string `json:"email" binding:"required,email"`
+}
+
 // LoginRequest represents the request body for user login
 type LoginRequest struct {
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required"`
 }
 
-// ResetPasswordRequest represents the request body for resetting a user's password
+// ForgotPasswordRequest represents the request body for initiating password reset
+type ForgotPasswordRequest struct {
+	Email string `json:"email" binding:"required,email"`
+}
+
+// ResetPasswordRequest represents the request body for resetting password
 type ResetPasswordRequest struct {
 	Email       string `json:"email" binding:"required,email"`
-	Code        string `json:"code" binding:"required,len=6"`
+	ResetToken  string `json:"reset_token" binding:"required"`
 	NewPassword string `json:"new_password" binding:"required,min=6"`
 }
 
@@ -67,24 +78,28 @@ type AuthResponse struct {
 
 // UserResponse represents the user data returned in API responses
 type UserResponse struct {
-	ID          uuid.UUID `json:"id"`
-	FullName    string    `json:"full_name"`
-	Email       string    `json:"email"`
-	PhoneNumber string    `json:"phone_number"`
-	Role        UserRole  `json:"role"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID           uuid.UUID `json:"id"`
+	FullName     string    `json:"full_name"`
+	Email        string    `json:"email"`
+	PhoneNumber  string    `json:"phone_number"`
+	Verified     bool      `json:"verified"`
+	ChickenedOut bool      `json:"chickened_out"`
+	Role         UserRole  `json:"role"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // ToResponse converts a User to UserResponse (excludes sensitive data)
 func (u *User) ToResponse() UserResponse {
 	return UserResponse{
-		ID:          u.ID,
-		FullName:    u.FullName,
-		Email:       u.Email,
-		PhoneNumber: u.PhoneNumber,
-		Role:        u.Role,
-		CreatedAt:   u.CreatedAt,
-		UpdatedAt:   u.UpdatedAt,
+		ID:           u.ID,
+		FullName:     u.FullName,
+		Email:        u.Email,
+		PhoneNumber:  u.PhoneNumber,
+		Verified:     u.Verified,
+		ChickenedOut: u.ChickenedOut,
+		Role:         u.Role,
+		CreatedAt:    u.CreatedAt,
+		UpdatedAt:    u.UpdatedAt,
 	}
 }

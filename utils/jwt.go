@@ -61,7 +61,7 @@ func ValidateJWT(tokenString string) (*JWTClaims, error) {
 		InitJWT()
 	}
 
-	token, err := jwt.ParseWithClaims(tokenString, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &JWTClaims{}, func(token *jwt.Token) (any, error) {
 		return jwtSecret, nil
 	})
 

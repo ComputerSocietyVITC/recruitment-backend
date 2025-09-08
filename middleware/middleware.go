@@ -2,13 +2,18 @@ package middleware
 
 import (
 	"log"
+	"net"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ComputerSocietyVITC/recruitment-backend/models"
 	"github.com/ComputerSocietyVITC/recruitment-backend/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/ulule/limiter/v3"
+	"github.com/ulule/limiter/v3/drivers/store/memory"
 )
 
 // JWTAuthMiddleware validates JWT tokens and sets user information in context
@@ -55,7 +60,7 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 		c.Set("userID", userID)
 		c.Set("userEmail", claims.Email)
 		c.Set("userRole", userRole)
-		c.Set("jwt_claims", claims)
+		c.Set("jwtClaims", claims)
 		c.Next()
 	}
 }
@@ -63,7 +68,7 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 // RoleBasedAuthMiddleware checks if the user has the required role(s)
 func RoleBasedAuthMiddleware(allowedRoles ...models.UserRole) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userRole, exists := c.Get("user_role")
+		userRole, exists := c.Get("userRole")
 		if !exists {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": "User role not found in context",
@@ -109,4 +114,138 @@ func AdminOrAboveMiddleware() gin.HandlerFunc {
 // EvaluatorOrAboveMiddleware allows evaluator, admin, and super admin access
 func EvaluatorOrAboveMiddleware() gin.HandlerFunc {
 	return RoleBasedAuthMiddleware(models.RoleEvaluator, models.RoleAdmin, models.RoleSuperAdmin)
+}
+
+// RateLimiterConfig holds configuration for rate limiting
+type RateLimiterConfig struct {
+	Rate limiter.Rate
+}
+
+// getClientIP extracts the real client IP, considering reverse proxy headers
+func getClientIP(c *gin.Context) string {
+	// Check for real IP headers in order of preference
+	headers := []string{
+		"X-Real-IP",
+		"X-Forwarded-For",
+		"CF-Connecting-IP", // Cloudflare
+		"True-Client-IP",   // Akamai and Cloudflare
+	}
+
+	for _, header := range headers {
+		ip := c.GetHeader(header)
+		if ip != "" {
+			// For X-Forwarded-For, take the first IP (original client)
+			if header == "X-Forwarded-For" {
+				ips := strings.Split(ip, ",")
+				ip = strings.TrimSpace(ips[0])
+			}
+
+			// Validate IP format
+			if net.ParseIP(ip) != nil {
+				return ip
+			}
+		}
+	}
+
+	// Fall back to RemoteAddr
+	ip, _, err := net.SplitHostPort(c.Request.RemoteAddr)
+	if err != nil {
+		return c.Request.RemoteAddr
+	}
+	return ip
+}
+
+// RateLimiterMiddleware creates a rate limiting middleware
+func RateLimiterMiddleware(config RateLimiterConfig) gin.HandlerFunc {
+	// Create an in-memory store for rate limiting
+	store := memory.NewStore()
+
+	// Create the limiter instance
+	instance := limiter.New(store, config.Rate)
+
+	return func(c *gin.Context) {
+		// Get the real client IP
+		clientIP := getClientIP(c)
+
+		// Check rate limit
+		context, err := instance.Get(c.Request.Context(), clientIP)
+		if err != nil {
+			log.Printf("Rate limiter error: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Internal server error",
+			})
+			c.Abort()
+			return
+		}
+
+		// Set rate limit headers
+		c.Header("X-RateLimit-Limit", strconv.FormatInt(context.Limit, 10))
+		c.Header("X-RateLimit-Remaining", strconv.FormatInt(context.Remaining, 10))
+		c.Header("X-RateLimit-Reset", strconv.FormatInt(context.Reset, 10))
+
+		// Check if rate limit is exceeded
+		if context.Reached {
+			// Calculate retry after duration
+			resetTime := time.Unix(context.Reset, 0)
+			retryAfter := time.Until(resetTime).Seconds()
+			if retryAfter < 0 {
+				retryAfter = 0
+			}
+
+			c.Header("Retry-After", strconv.FormatFloat(retryAfter, 'f', 0, 64))
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"error":       "Rate limit exceeded",
+				"message":     "Too many requests. Please try again later.",
+				"retry_after": retryAfter,
+			})
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// DefaultRateLimiter creates a rate limiter with sensible defaults
+// 100 requests per minute per IP
+func DefaultRateLimiter() gin.HandlerFunc {
+	rate := limiter.Rate{
+		Period: time.Minute,
+		Limit:  100,
+	}
+
+	config := RateLimiterConfig{
+		Rate: rate,
+	}
+
+	return RateLimiterMiddleware(config)
+}
+
+// StrictRateLimiter creates a more restrictive rate limiter
+// 20 requests per minute per IP (useful for auth endpoints)
+func StrictRateLimiter() gin.HandlerFunc {
+	rate := limiter.Rate{
+		Period: time.Minute,
+		Limit:  20,
+	}
+
+	config := RateLimiterConfig{
+		Rate: rate,
+	}
+
+	return RateLimiterMiddleware(config)
+}
+
+// CustomRateLimiter allows a rate limiter with custom limits
+func CustomRateLimiter(requestsPerPeriod int64, period time.Duration, trustedProxies []string) gin.HandlerFunc {
+	rate := limiter.Rate{
+		Period: period,
+		Limit:  requestsPerPeriod,
+	}
+
+	config := RateLimiterConfig{
+		Rate: rate,
+	}
+
+	return RateLimiterMiddleware(config)
 }

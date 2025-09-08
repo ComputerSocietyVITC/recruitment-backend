@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:17-alpine
+    container_name: recruitment_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-recruitment_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-recruitment_password123}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    volumes:
+      - /var/data/recruitment/db:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - recruitment_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-recruitment_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Go Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: recruitment_app
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    env_file:
+      - .env
+    environment:
+      # Database Configuration
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-recruitment_password123}
+      DB_NAME: ${POSTGRES_DB:-recruitment_db}
+      
+      # Server Configuration
+      PORT: 8080
+      GIN_MODE: ${GIN_MODE:-release}
+      ENV: ${ENV:-production}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - recruitment_network
+    command: ["./wait-for-postgres.sh", "postgres", "5432", "${POSTGRES_USER:-postgres}", "${POSTGRES_PASSWORD:-recruitment_password123}", "${POSTGRES_DB:-recruitment_db}", "./main"]
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  recruitment_network:
+    driver: bridge

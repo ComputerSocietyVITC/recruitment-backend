@@ -1,120 +1,96 @@
-# Makefile for Recruitment Backend
+# Docker operations for recruitment backend
+
+.PHONY: help build up down logs restart clean dev-setup
 
 # Default target
-.PHONY: help
-help:
+help: ## Show this help message
 	@echo "Available commands:"
-	@echo "  run             Start the server"
-	@echo "  build           Build the application"
-	@echo "  jwt-secret      Generate a random JWT secret"
-	@echo "  hash-password   Generate a password hash (usage: make hash-password PWD=yourpassword)"
-	@echo "  build-cli       Build standalone CLI utility"
-	@echo "  test            Run tests"
-	@echo "  clean           Clean build artifacts"
-	@echo ""
-	@echo "Database commands:"
-	@echo "  db-up           Run database migrations (up)"
-	@echo "  db-down         Rollback database migrations (down)"
-	@echo "  db-docker       Start PostgreSQL in Docker container"
-	@echo "  db-docker-stop  Stop PostgreSQL Docker container"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
-# Server commands
-.PHONY: run
-run:
-	go run main.go
-
-.PHONY: build
-build:
-	go build -o bin/recruitment-backend main.go
-
-# CLI utilities
-.PHONY: jwt-secret
-jwt-secret:
-	go run cmds/*.go jwt-secret
-
-.PHONY: hash-password
-hash-password:
-	@if [ -z "$(PWD)" ]; then \
-		echo "Usage: make hash-password PWD=yourpassword"; \
-		exit 1; \
+dev-setup: ## Setup development environment
+	@echo "Setting up development environment..."
+	@if [ ! -f .env ]; then \
+		echo "Creating .env from template..."; \
+		cp .env.docker .env; \
+		echo "⚠️  Please edit .env file with your actual values before running 'make up'"; \
+	else \
+		echo ".env file already exists"; \
 	fi
-	go run cmds/*.go hash-password $(PWD)
 
-.PHONY: build-cli
-build-cli:
-	mkdir -p bin
-	go build -o bin/recruitment-cli cmds/*.go
+build: ## Build the Docker images
+	docker-compose build
 
-# Testing
-.PHONY: test
-test:
-	go test ./...
+up: dev-setup ## Start all services
+	docker-compose up -d
 
-# Cleanup
-.PHONY: clean
-clean:
-	rm -rf bin/
-	go clean
+down: ## Stop all services
+	docker-compose down
+
+logs: ## Show logs from all services
+	docker-compose logs -f
+
+logs-app: ## Show logs from application only
+	docker-compose logs -f app
+
+logs-db: ## Show logs from database only
+	docker-compose logs -f postgres
+
+restart: ## Restart all services
+	docker-compose restart
+
+restart-app: ## Restart application only
+	docker-compose restart app
+
+clean: ## Stop services and remove containers, networks, and volumes
+	docker-compose down -v --remove-orphans
+
+clean-all: ## Remove everything including images
+	docker-compose down -v --rmi all --remove-orphans
+
+rebuild: ## Rebuild and restart the application
+	docker-compose build app
+	docker-compose up -d app
+
+shell-app: ## Access application container shell
+	docker-compose exec app sh
+
+shell-db: ## Access database container shell
+	docker-compose exec postgres psql -U postgres -d recruitment_db
+
+status: ## Show status of all services
+	docker-compose ps
+
+health: ## Check health of services
+	@echo "Checking service health..."
+	@docker-compose ps
+	@echo "\nTesting application endpoint..."
+	@curl -s http://localhost:8080/ping || echo "Application not responding"
+
+generate-jwt: ## Generate a secure JWT secret
+	@echo "Generated JWT Secret:"
+	@openssl rand -base64 32
 
 # Development helpers
-.PHONY: deps
-deps:
-	go mod tidy
-	go mod download
+dev-logs: ## Follow development logs with timestamps
+	docker-compose logs -f --timestamps
 
-.PHONY: format
-format:
-	go fmt ./...
+dev-rebuild: down build up ## Full rebuild for development
 
-.PHONY: lint
-lint:
-	golangci-lint run
+# Database operations
+db-reset: ## Reset database (removes all data)
+	docker-compose down postgres
+	docker volume rm recruitment-backend_postgres_data || true
+	docker-compose up -d postgres
+	@echo "Database reset complete. Application will run migrations on next start."
 
-# Database commands
-.PHONY: db-up
-db-up:
-	@echo "Running database migrations (up)..."
-	@if command -v psql >/dev/null 2>&1; then \
-		psql -h ${DB_HOST:-localhost} -U ${DB_USER:-postgres} -d ${DB_NAME:-recruitment_db} -f models/migrations/001_initial_up.sql; \
-	else \
-		echo "psql not found. Please install PostgreSQL client or use Docker:"; \
-		echo "docker exec -i recruitment_postgres psql -U postgres -d recruitment_db < models/migrations/001_initial_up.sql"; \
+db-backup: ## Backup database to backup.sql
+	docker-compose exec postgres pg_dump -U postgres recruitment_db > backup.sql
+	@echo "Database backed up to backup.sql"
+
+db-restore: ## Restore database from backup.sql (requires backup.sql file)
+	@if [ ! -f backup.sql ]; then \
+		echo "backup.sql file not found"; \
+		exit 1; \
 	fi
-
-.PHONY: db-down
-db-down:
-	@echo "Rolling back database migrations (down)..."
-	@if command -v psql >/dev/null 2>&1; then \
-		psql -h ${DB_HOST:-localhost} -U ${DB_USER:-postgres} -d ${DB_NAME:-recruitment_db} -f models/migrations/001_initial_down.sql; \
-	else \
-		echo "psql not found. Please install PostgreSQL client or use Docker:"; \
-		echo "docker exec -i recruitment_postgres psql -U postgres -d recruitment_db < models/migrations/001_initial_down.sql"; \
-	fi
-
-.PHONY: db-docker
-db-docker:
-	@echo "Starting PostgreSQL in Docker container..."
-	@if command -v docker >/dev/null 2>&1; then \
-		docker run -d \
-			--name recruitment_postgres \
-			-e POSTGRES_DB=recruitment_db \
-			-e POSTGRES_USER=postgres \
-			-e POSTGRES_PASSWORD=password \
-			-p 5432:5432 \
-			-v recruitment_postgres_data:/var/lib/postgresql/data \
-			postgres:15 || echo "Container may already exist. Use 'docker start recruitment_postgres' if stopped."; \
-		echo "Waiting for database to be ready..."; \
-		sleep 5; \
-		make db-up; \
-	else \
-		echo "Docker not found. Please install Docker or set up PostgreSQL manually."; \
-	fi
-
-.PHONY: db-docker-stop
-db-docker-stop:
-	@echo "Stopping PostgreSQL Docker container..."
-	@if command -v docker >/dev/null 2>&1; then \
-		docker stop recruitment_postgres; \
-	else \
-		echo "Docker not found."; \
-	fi
+	docker-compose exec -T postgres psql -U postgres recruitment_db < backup.sql
+	@echo "Database restored from backup.sql"
