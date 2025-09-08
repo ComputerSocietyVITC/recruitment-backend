@@ -23,3 +23,9 @@ type AnswerRequest struct {
 	QuestionID uuid.UUID `json:"question_id" binding:"required"`
 	Body       string    `json:"body" binding:"required"`
 }
+
+type PostAnswerRequest struct {
+	ApplicationID uuid.UUID `json:"application_id" binding:"required"`
+	QuestionID    uuid.UUID `json:"question_id" binding:"required"`
+	Body          string    `json:"body" binding:"required"`
+}

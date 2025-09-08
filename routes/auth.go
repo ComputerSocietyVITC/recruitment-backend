@@ -6,13 +6,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ComputerSocietyVITC/recruitment-backend/database"
 	"github.com/ComputerSocietyVITC/recruitment-backend/models"
 	"github.com/ComputerSocietyVITC/recruitment-backend/models/queries"
+	"github.com/ComputerSocietyVITC/recruitment-backend/services"
 	"github.com/ComputerSocietyVITC/recruitment-backend/utils"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
+	"gopkg.in/gomail.v2"
 )
 
 // Register handles POST /auth/register - creates a new user account
@@ -31,35 +31,39 @@ func Register(c *gin.Context) {
 		req.Role = models.RoleApplicant
 	}
 
-	// Validate role
-	if req.Role != models.RoleApplicant && req.Role != models.RoleEvaluator &&
-		req.Role != models.RoleAdmin && req.Role != models.RoleSuperAdmin {
+	// Roles other than applicant are not allowed to register
+	if req.Role != models.RoleApplicant {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Invalid role specified",
 		})
 		return
 	}
 
-	// Only super admins can create admin or super admin accounts
-	if req.Role == models.RoleAdmin || req.Role == models.RoleSuperAdmin {
-		userRole, exists := c.Get("user_role")
-		if !exists || userRole != models.RoleSuperAdmin {
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": "Only super administrators can create admin accounts",
-			})
-			return
+	// Split email to get domain
+	emailParts := strings.Split(req.Email, "@")
+	if len(emailParts) != 2 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid email format",
+		})
+		return
+	}
+	domain := emailParts[1]
+
+	// Check if email domain is allowed
+	allowedDomains := strings.Split(utils.GetEnvWithDefault("ALLOWED_EMAIL_DOMAINS", "vit.ac.in,vitstudent.ac.in"), ",")
+	domainAllowed := false
+	for _, d := range allowedDomains {
+		if strings.EqualFold(strings.TrimSpace(d), domain) {
+			domainAllowed = true
+			break
 		}
 	}
 
-	// Only administrators can create evaluator accounts
-	if req.Role == models.RoleEvaluator {
-		userRole, exists := c.Get("user_role")
-		if !exists || (userRole != models.RoleAdmin && userRole != models.RoleSuperAdmin) {
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": "Only administrators can create evaluator accounts",
-			})
-			return
-		}
+	if !domainAllowed {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Email domain is not allowed",
+		})
+		return
 	}
 
 	// Hash the password
@@ -83,7 +87,6 @@ func Register(c *gin.Context) {
 	tokenExpiresAt := time.Now().Add(10 * time.Minute)
 
 	user := models.User{
-		ID:                  uuid.New(),
 		FullName:            req.FullName,
 		Email:               req.Email,
 		PhoneNumber:         req.PhoneNumber,
@@ -92,17 +95,15 @@ func Register(c *gin.Context) {
 		Verified:            false,
 		ResetToken:          &otp,
 		ResetTokenExpiresAt: &tokenExpiresAt,
-		CreatedAt:           time.Now(),
-		UpdatedAt:           time.Now(),
 	}
 
 	ctx := context.Background()
-	err = database.DB.QueryRow(ctx, queries.CreateUserWithVerificationQuery,
-		user.ID, user.FullName, user.Email, user.PhoneNumber, user.Verified, user.ResetToken,
-		user.ResetTokenExpiresAt, user.HashedPassword, user.Role, user.CreatedAt, user.UpdatedAt,
+	err = services.DB.QueryRow(ctx, queries.CreateUserQuery,
+		user.FullName, user.Email, user.PhoneNumber, user.Verified, user.ResetToken,
+		user.ResetTokenExpiresAt, user.HashedPassword, user.Role,
 	).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber,
-		&user.Role, &user.CreatedAt, &user.UpdatedAt,
+		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified,
+		&user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err != nil {
@@ -113,18 +114,18 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	subject := "Thank you for applying to IEEE CompSoc. Please verify your email address"
+	subject := "Thank you for applying to IEEE Computer Society VITC. Please verify your email address"
 	body := "Your OTP is: <strong>" + otp + "</strong>. It is valid for 10 minutes."
-	if err := utils.GetMailerInstance().Send([]string{user.Email}, subject, body); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to send verification email",
-			"details": err.Error(),
-		})
-		return
-	}
+	m := gomail.NewMessage()
+	m.SetHeader("From", utils.GetEnvWithDefault("EMAIL_FROM", "recruitments@no-reply.ieeecsvitc.com"))
+	m.SetHeader("To", user.Email)
+	m.SetHeader("Subject", subject)
+	m.SetBody("text/html", body)
+
+	services.Mailer <- m
 
 	c.JSON(http.StatusCreated, gin.H{
-		"message": "User created successfully. Please check your email for the verification code.",
+		"message": "User created successfully. Please check email for the verification code.",
 		"user":    user.ToResponse(),
 	})
 }
@@ -141,14 +142,21 @@ func VerifyOTP(c *gin.Context) {
 
 	ctx := context.Background()
 	var user models.User
-	err := database.DB.QueryRow(ctx, queries.GetUserByEmailQuery, req.Email).Scan(
+	err := services.DB.QueryRow(ctx, queries.GetUserByEmailQuery, req.Email).Scan(
 		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified, &user.ResetToken,
-		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.CreatedAt, &user.UpdatedAt,
+		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "User not found",
+		})
+		return
+	}
+
+	if user.ResetToken == nil || user.ResetTokenExpiresAt == nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "User or OTP not found",
 		})
 		return
 	}
@@ -161,7 +169,7 @@ func VerifyOTP(c *gin.Context) {
 	}
 
 	if *user.ResetToken == req.Code {
-		err := database.DB.QueryRow(ctx, queries.UpdateUserVerificationStatusQuery, user.ID, true).Scan(
+		err := services.DB.QueryRow(ctx, queries.UpdateUserVerificationStatusQuery, user.ID, true).Scan(
 			&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified, &user.Role, &user.CreatedAt, &user.UpdatedAt,
 		)
 
@@ -179,40 +187,29 @@ func VerifyOTP(c *gin.Context) {
 		return
 	}
 
-	token, err := utils.GenerateJWT(&user)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to generate authentication token",
-			"details": err.Error(),
-		})
-		return
-	}
-
 	c.JSON(http.StatusOK, gin.H{
 		"message": "User verified successfully",
-		"user":    user.ToResponse(),
-		"token":   token,
 	})
 }
 
-// ResendOTP handles POST /auth/resend-otp - resends the OTP to the user's email
-func ResendOTP(c *gin.Context) {
-	var req struct {
-		Email string `json:"email" binding:"required,email"`
-	}
+// ResendVerificationOTP handles POST /auth/resend-otp - resends verification OTP for unverified users
+func ResendVerificationOTP(c *gin.Context) {
+	var req models.ResendOTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid request body",
+			"error":   "Invalid request body",
+			"details": err.Error(),
 		})
 		return
 	}
 
 	ctx := context.Background()
 	var user models.User
-	err := database.DB.QueryRow(ctx, queries.GetUserByEmailQuery, req.Email).Scan(
+	err := services.DB.QueryRow(ctx, queries.GetUserByEmailQuery, req.Email).Scan(
 		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified, &user.ResetToken,
-		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.CreatedAt, &user.UpdatedAt,
+		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
 	)
+
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "User not found",
@@ -220,44 +217,52 @@ func ResendOTP(c *gin.Context) {
 		return
 	}
 
-	otp := user.ResetToken
-	expiresAt := user.ResetTokenExpiresAt
-
-	if expiresAt == nil || time.Now().After(*expiresAt) {
-		newOTP, err := utils.GenerateOTP()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"details": "Failed to generate OTP",
-				"error":   err.Error(),
-			})
-			return
-		}
-
-		otp = &newOTP
-		newExpiresAt := time.Now().Add(10 * time.Minute)
-		expiresAt = &newExpiresAt
-
-		_, err = database.DB.Exec(ctx, queries.UpdateResetTokenQuery, user.ID, otp, expiresAt)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "Failed to update OTP",
-			})
-			return
-		}
+	// Check if user is already verified
+	if user.Verified {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "User is already verified",
+		})
+		return
 	}
 
-	subject := "New OTP for IEEE CompSoc"
-	body := "Your OTP is: <strong>" + *otp + "</strong>. It is valid for 10 minutes."
-	if err := utils.GetMailerInstance().Send([]string{user.Email}, subject, body); err != nil {
+	// Generate a new OTP
+	otp, err := utils.GenerateOTP()
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to send verification email",
+			"error": "Failed to generate OTP",
+		})
+		return
+	}
+
+	tokenExpiresAt := time.Now().Add(10 * time.Minute)
+
+	// Update user's reset token and expiration time
+	err = services.DB.QueryRow(ctx, queries.UpdateUserResetTokenQuery, user.ID, otp, tokenExpiresAt).Scan(
+		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified, &user.ResetToken,
+		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.CreatedAt, &user.UpdatedAt,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to update verification token",
 			"details": err.Error(),
 		})
 		return
 	}
 
+	// Send verification email
+	subject := "IEEE Computer Society VITC - New Verification Code"
+	body := "Your new OTP is: <strong>" + otp + "</strong>. It is valid for 10 minutes."
+	m := gomail.NewMessage()
+	m.SetHeader("From", utils.GetEnvWithDefault("EMAIL_FROM", "recruitments@no-reply.ieeecsvitc.com"))
+	m.SetHeader("To", user.Email)
+	m.SetHeader("Subject", subject)
+	m.SetBody("text/html", body)
+
+	services.Mailer <- m
+
 	c.JSON(http.StatusOK, gin.H{
-		"message": "OTP resent successfully",
+		"message": "Verification OTP has been resent. Please check your email.",
 	})
 }
 
@@ -275,9 +280,9 @@ func Login(c *gin.Context) {
 	ctx := context.Background()
 	var user models.User
 
-	err := database.DB.QueryRow(ctx, queries.GetUserByEmailQuery, req.Email).Scan(
+	err := services.DB.QueryRow(ctx, queries.GetUserByEmailQuery, req.Email).Scan(
 		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified, &user.ResetToken,
-		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.CreatedAt, &user.UpdatedAt,
+		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err != nil {
@@ -360,9 +365,9 @@ func GetProfile(c *gin.Context) {
 	ctx := context.Background()
 	var user models.User
 
-	err := database.DB.QueryRow(ctx, queries.GetUserByIDQuery, userID).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber,
-		&user.Role, &user.CreatedAt, &user.UpdatedAt,
+	err := services.DB.QueryRow(ctx, queries.GetUserByIDQuery, userID).Scan(
+		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified,
+		&user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err != nil {
@@ -375,11 +380,9 @@ func GetProfile(c *gin.Context) {
 	c.JSON(http.StatusOK, user.ToResponse())
 }
 
-// ForgotPassword handles POST /auth/forgot-password - initiates password reset
+// ForgotPassword handles POST /auth/forgot-password - sends password reset email
 func ForgotPassword(c *gin.Context) {
-	var req struct {
-		Email string `json:"email" binding:"required,email"`
-	}
+	var req models.ForgotPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "Invalid request body",
@@ -390,49 +393,70 @@ func ForgotPassword(c *gin.Context) {
 
 	ctx := context.Background()
 	var user models.User
-	err := database.DB.QueryRow(ctx, queries.GetUserByEmailQuery, req.Email).Scan(
+	err := services.DB.QueryRow(ctx, queries.GetUserByEmailQuery, req.Email).Scan(
+		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified, &user.ResetToken,
+		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
+	)
+
+	if err != nil {
+		// For security, don't reveal if email exists or not
+		c.JSON(http.StatusOK, gin.H{
+			"message": "If the email exists, a password reset code has been sent.",
+		})
+		return
+	}
+
+	// Check if user is verified
+	if !user.Verified {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "User email is not verified. Please verify your email first.",
+		})
+		return
+	}
+
+	// Generate a reset token (reusing OTP generation for consistency)
+	resetToken, err := utils.GenerateOTP()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to generate reset token",
+		})
+		return
+	}
+
+	tokenExpiresAt := time.Now().Add(30 * time.Minute) // 30 minutes expiry for password reset
+
+	// Update user's reset token and expiration time
+	err = services.DB.QueryRow(ctx, queries.UpdateUserResetTokenQuery, user.ID, resetToken, tokenExpiresAt).Scan(
 		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified, &user.ResetToken,
 		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.CreatedAt, &user.UpdatedAt,
 	)
+
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "User not found",
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to generate reset token",
+			"details": err.Error(),
 		})
 		return
 	}
 
-	otp, err := utils.GenerateOTP()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to generate OTP",
-		})
-		return
-	}
-	expiresAt := time.Now().Add(10 * time.Minute)
+	// Send password reset email
+	subject := "IEEE Computer Society VITC - Password Reset Request"
+	body := "You have requested to reset your password. Your reset token is: <strong>" + resetToken + "</strong>. " +
+		"This token is valid for 30 minutes. If you did not request this reset, please ignore this email."
+	m := gomail.NewMessage()
+	m.SetHeader("From", utils.GetEnvWithDefault("EMAIL_FROM", "recruitments@no-reply.ieeecsvitc.com"))
+	m.SetHeader("To", user.Email)
+	m.SetHeader("Subject", subject)
+	m.SetBody("text/html", body)
 
-	_, err = database.DB.Exec(ctx, queries.UpdateResetTokenQuery, user.ID, &otp, &expiresAt)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to update OTP",
-		})
-		return
-	}
-
-	subject := "IEEE CompSoc - Password Reset OTP"
-	body := "Your password reset OTP is: <strong>" + otp + "</strong>. It is valid for 10 minutes."
-	if err := utils.GetMailerInstance().Send([]string{user.Email}, subject, body); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to send OTP email",
-		})
-		return
-	}
+	services.Mailer <- m
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "Password reset OTP sent successfully",
+		"message": "If the email exists, a password reset code has been sent.",
 	})
 }
 
-// ResetPassword handles POST /auth/reset-password - resets the user's password
+// ResetPassword handles POST /auth/reset-password - resets password using token
 func ResetPassword(c *gin.Context) {
 	var req models.ResetPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -445,10 +469,11 @@ func ResetPassword(c *gin.Context) {
 
 	ctx := context.Background()
 	var user models.User
-	err := database.DB.QueryRow(ctx, queries.GetUserByEmailQuery, req.Email).Scan(
+	err := services.DB.QueryRow(ctx, queries.GetUserByEmailQuery, req.Email).Scan(
 		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified, &user.ResetToken,
-		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.CreatedAt, &user.UpdatedAt,
+		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
 	)
+
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "User not found",
@@ -456,37 +481,101 @@ func ResetPassword(c *gin.Context) {
 		return
 	}
 
-	if user.ResetToken == nil || user.ResetTokenExpiresAt == nil || user.ResetTokenExpiresAt.Before(time.Now()) {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "OTP has expired",
+	// Check if user is verified
+	if !user.Verified {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "User email is not verified. Please verify your email first.",
 		})
 		return
 	}
 
-	if *user.ResetToken != req.Code {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "Invalid OTP",
+	// Validate reset token
+	if user.ResetToken == nil || user.ResetTokenExpiresAt == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "No password reset request found",
 		})
 		return
 	}
 
+	if user.ResetTokenExpiresAt.Before(time.Now()) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Reset token has expired",
+		})
+		return
+	}
+
+	if *user.ResetToken != req.ResetToken {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid reset token",
+		})
+		return
+	}
+
+	// Hash the new password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to process password",
+			"error": "Failed to process new password",
 		})
 		return
 	}
 
-	_, err = database.DB.Exec(ctx, queries.UpdatePasswordQuery, user.ID, string(hashedPassword))
+	// Update password and clear reset token
+	err = services.DB.QueryRow(ctx, queries.UpdateUserPasswordQuery, user.ID, string(hashedPassword)).Scan(
+		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified, &user.Role, &user.CreatedAt, &user.UpdatedAt,
+	)
+
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to update password",
+			"error":   "Failed to update password",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Send confirmation email
+	subject := "IEEE Computer Society VITC - Password Reset Successful"
+	body := "Your password has been successfully reset. If you did not perform this action, please contact support immediately."
+	m := gomail.NewMessage()
+	m.SetHeader("From", utils.GetEnvWithDefault("EMAIL_FROM", "recruitments@no-reply.ieeecsvitc.com"))
+	m.SetHeader("To", user.Email)
+	m.SetHeader("Subject", subject)
+	m.SetBody("text/html", body)
+
+	services.Mailer <- m
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Password has been reset successfully",
+	})
+}
+
+// ChickenOut handles POST /auth/chicken-out - marks the user as chickened out
+func ChickenOut(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "User ID not found in token",
+		})
+		return
+	}
+
+	ctx := context.Background()
+	var user models.User
+
+	err := services.DB.QueryRow(ctx, queries.UpdateUserChickenedOutStatusQuery, userID, true).Scan(
+		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified,
+		&user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "User not found",
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "Password reset successfully",
+		"message": "You have successfully chickened out.",
+		"user":    user.ToResponse(),
 	})
 }

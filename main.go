@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ComputerSocietyVITC/recruitment-backend/database"
 	"github.com/ComputerSocietyVITC/recruitment-backend/middleware"
 	"github.com/ComputerSocietyVITC/recruitment-backend/routes"
+	"github.com/ComputerSocietyVITC/recruitment-backend/services"
 	"github.com/ComputerSocietyVITC/recruitment-backend/utils"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/requestid"
@@ -46,10 +46,14 @@ func main() {
 	utils.InitJWT()
 
 	// Initialize database connection
-	if err := database.InitDB(); err != nil {
+	if err := services.InitDB(logger); err != nil {
 		logger.Fatal("Failed to initialize database", zap.Error(err))
 	}
-	defer database.CloseDB()
+	defer services.CloseDB(logger)
+
+	// Initialize email sender as a goroutine
+	go services.InitMailer(logger)
+	defer services.CloseMailer(logger)
 
 	// Set Gin to release mode for production logging
 	if utils.GetEnvWithDefault("GIN_MODE", "debug") == "release" {
@@ -71,7 +75,12 @@ func main() {
 	}))
 
 	// Set trusted proxies (update during deployment)
-	router.SetTrustedProxies([]string{"127.0.0.1"})
+	router.SetTrustedProxies([]string{
+		"127.0.0.1",
+		"10.0.0.0/8",
+		"172.16.0.0/12",
+		"192.168.0.0/16",
+	})
 
 	router.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -84,56 +93,75 @@ func main() {
 	{
 		// Authentication routes (public)
 		auth := v1.Group("/auth")
+		auth.Use(middleware.StrictRateLimiter())
 		{
-			auth.POST("/register", routes.Register)                                                         // POST /api/v1/auth/register
-			auth.POST("/verify-otp", routes.VerifyOTP)                                                      // POST /api/v1/auth/verify-otp
-			auth.POST("/resend-otp", middleware.RateLimiterMiddleware(30*time.Second, 1), routes.ResendOTP) // POST /api/v1/auth/resend-otp
-			auth.POST("/login", routes.Login)                                                               // POST /api/v1/auth/login
-			auth.POST("/refresh", routes.RefreshToken)                                                      // POST /api/v1/auth/refresh
-			auth.GET("/profile", middleware.JWTAuthMiddleware(), routes.GetProfile)                         // GET /api/v1/auth/profile
-			auth.POST("/forgot-password", routes.ForgotPassword)                                            // POST /api/v1/auth/forgot-password
-			auth.POST("/reset-password", routes.ResetPassword)                                              // POST /api/v1/auth/reset-password
+			auth.POST("/register", routes.Register)                                      // POST /api/v1/auth/register
+			auth.POST("/verify-otp", routes.VerifyOTP)                                   // POST /api/v1/auth/verify-otp
+			auth.POST("/resend-otp", routes.ResendVerificationOTP)                       // POST /api/v1/auth/resend-otp
+			auth.POST("/login", routes.Login)                                            // POST /api/v1/auth/login
+			auth.POST("/refresh", routes.RefreshToken)                                   // POST /api/v1/auth/refresh
+			auth.POST("/forgot-password", routes.ForgotPassword)                         // POST /api/v1/auth/forgot-password
+			auth.POST("/reset-password", routes.ResetPassword)                           // POST /api/v1/auth/reset-password
+			auth.GET("/profile", middleware.JWTAuthMiddleware(), routes.GetProfile)      // GET /api/v1/auth/profile
+			auth.POST("/chicken-out", middleware.JWTAuthMiddleware(), routes.ChickenOut) // POST /api/v1/auth/chicken-out
 		}
+
 		applications := v1.Group("/applications")
 		applications.Use(middleware.JWTAuthMiddleware()) // All application routes require authentication
 		{
-			applications.GET("", middleware.RateLimit("30-M"), routes.GetAllApplications)         // 30 GETs per minute
-			applications.POST("", middleware.RateLimit("5-M"), routes.CreateApplication)          // 5 POSTs per minute
-			applications.GET("/me", middleware.RateLimit("30-M"), routes.GetMyApplications)       // 30 GETs per minute
-			applications.PATCH("/:id/save", middleware.RateLimit("10-M"), routes.SaveApplication) // 10 PATCHs per minute
+			applications.GET("", middleware.AdminOrAboveMiddleware(), routes.GetAllApplications) // GET /api/v1/applications (get all apps)
+			applications.POST("", routes.CreateApplication)                                      // POST /api/v1/applications (create new app)
+			applications.GET("/me", routes.GetMyApplications)                                    // GET /api/v1/applications/me (get user's apps)
+			applications.PATCH("/:id/save", routes.SaveApplication)                              // PATCH /api/v1/applications/:id/save (save answers)
+			applications.POST("/:id/submit", routes.SubmitApplication)                           // POST /api/v1/applications/:id/submit (submit app)
+			applications.DELETE("/:id", routes.DeleteApplication)                                // DELETE /api/v1/applications/:id (delete app)
+		}
+
+		// Answers routes (protected)
+		answers := v1.Group("/answers")
+		answers.Use(middleware.JWTAuthMiddleware()) // All answer routes require authentication
+		{
+			answers.POST("", routes.PostAnswer)                                                        // POST /api/v1/answers (create/update answer)
+			answers.DELETE("/:id", routes.DeleteAnswer)                                                // DELETE /api/v1/answers/:id (delete answer)
+			answers.GET("/application/:id", routes.GetUserAnswersForApplication)                       // GET /api/v1/answers/application/:id (get user's answers for app)
+			answers.GET("/user/:id", middleware.EvaluatorOrAboveMiddleware(), routes.GetAnswersByUser) // GET /api/v1/answers/user/:id (get all answers by user - evaluator+)
 		}
 
 		// Questions routes (public)
 		questions := v1.Group("/questions")
+		questions.Use(middleware.DefaultRateLimiter())
+		questions.Use(middleware.JWTAuthMiddleware())
 		{
-			questions.GET("", routes.GetQuestions) // GET /api/v1/questions?dept=tech
+			questions.GET("", routes.GetQuestions) // GET /api/v1/questions?dept=tech'
+			questions.POST("", middleware.AdminOrAboveMiddleware(), routes.CreateQuestion)
+			questions.DELETE("/:id", middleware.AdminOrAboveMiddleware(), routes.DeleteQuestion)
+			questions.GET("/all", middleware.EvaluatorOrAboveMiddleware(), routes.GetAllQuestions)
+			questions.GET("/:id", routes.GetQuestionByID)
+
 		}
 
 		// User routes (protected)
 		users := v1.Group("/users")
-		users.Use(middleware.JWTAuthMiddleware()) // All user routes require authentication
+		users.Use(middleware.StrictRateLimiter())
+		users.Use(middleware.JWTAuthMiddleware())
+		users.Use(middleware.EvaluatorOrAboveMiddleware())
 		{
-			users.POST("", middleware.AdminOrAboveMiddleware(), routes.CreateUser)     // POST /api/v1/users (admin only)
-			users.GET("", middleware.EvaluatorOrAboveMiddleware(), routes.GetAllUsers) // GET /api/v1/users (evaluator+)
-			users.GET("/:id", routes.GetUserByID)                                      // GET /api/v1/users/:id
-		}
-
-		// Admin routes (admin and super admin only)
-		admin := v1.Group("/admin")
-		admin.Use(middleware.JWTAuthMiddleware())
-		admin.Use(middleware.AdminOrAboveMiddleware())
-		{
-			// Other admin routes can be added here
+			users.POST("", middleware.AdminOrAboveMiddleware(), routes.CreateUser)       // POST /api/v1/users (admin only)
+			users.GET("", routes.GetAllUsers)                                            // GET /api/v1/users (evaluator+)
+			users.GET("/:id", routes.GetUserByID)                                        // GET /api/v1/users/:id
+			users.GET("/email/:email", routes.GetUserByEmail)                            // GET /api/v1/users/email/:email
+			users.DELETE("/:id", middleware.AdminOrAboveMiddleware(), routes.DeleteUser) // DELETE /api/v1/users/:id (admin+)
 		}
 
 		// Super Admin routes (super admin only)
-		superAdmin := v1.Group("/super-admin")
+		superAdmin := v1.Group("/admin")
+		superAdmin.Use(middleware.StrictRateLimiter())
 		superAdmin.Use(middleware.JWTAuthMiddleware())
 		superAdmin.Use(middleware.SuperAdminOnlyMiddleware())
 		{
 			// Reserved for super admin specific routes
-			superAdmin.POST("/admin-users", routes.Register)         // POST /api/v1/super-admin/admin-users
 			superAdmin.PUT("/users/:id/role", routes.UpdateUserRole) // PUT /api/v1/super-admin/users/:id/role
+			superAdmin.PUT("/users/:id/verify", routes.VerifyUser)   // PUT /api/v1/super-admin/users/:id/verify
 		}
 	}
 
