@@ -50,7 +50,7 @@ func Register(c *gin.Context) {
 	domain := emailParts[1]
 
 	// Check if email domain is allowed
-	allowedDomains := strings.Split(utils.GetEnvWithDefault("ALLOWED_EMAIL_DOMAINS", "vit.ac.in,vitstudent.ac.in"), ",")
+	allowedDomains := utils.GetEnvAsSlice("ALLOWED_EMAIL_DOMAINS", ",", []string{"vit.ac.in", "vitstudent.ac.in"})
 	domainAllowed := false
 	for _, d := range allowedDomains {
 		if strings.EqualFold(strings.TrimSpace(d), domain) {

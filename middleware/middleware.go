@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"net"
 	"net/http"
 	"slices"
 	"strconv"
@@ -131,40 +130,6 @@ type RateLimiterConfig struct {
 	Rate limiter.Rate
 }
 
-// getClientIP extracts the real client IP, considering reverse proxy headers
-func getClientIP(c *gin.Context) string {
-	// Check for real IP headers in order of preference
-	headers := []string{
-		"X-Real-IP",
-		"X-Forwarded-For",
-		"CF-Connecting-IP", // Cloudflare
-		"True-Client-IP",   // Akamai and Cloudflare
-	}
-
-	for _, header := range headers {
-		ip := c.GetHeader(header)
-		if ip != "" {
-			// For X-Forwarded-For, take the first IP (original client)
-			if header == "X-Forwarded-For" {
-				ips := strings.Split(ip, ",")
-				ip = strings.TrimSpace(ips[0])
-			}
-
-			// Validate IP format
-			if net.ParseIP(ip) != nil {
-				return ip
-			}
-		}
-	}
-
-	// Fall back to RemoteAddr
-	ip, _, err := net.SplitHostPort(c.Request.RemoteAddr)
-	if err != nil {
-		return c.Request.RemoteAddr
-	}
-	return ip
-}
-
 // RateLimiterMiddleware creates a rate limiting middleware
 func RateLimiterMiddleware(config RateLimiterConfig) gin.HandlerFunc {
 	// Create an in-memory store for rate limiting
@@ -175,7 +140,7 @@ func RateLimiterMiddleware(config RateLimiterConfig) gin.HandlerFunc {
 
 	return func(c *gin.Context) {
 		// Get the real client IP
-		clientIP := getClientIP(c)
+		clientIP := c.ClientIP()
 
 		// Check rate limit
 		context, err := instance.Get(c.Request.Context(), clientIP)
