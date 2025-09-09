@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -17,7 +19,9 @@ import (
 	"github.com/gin-contrib/requestid"
 	ginzap "github.com/gin-contrib/zap"
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 // performHealthCheck performs a health check and exits with appropriate code
@@ -93,6 +97,9 @@ func main() {
 	// Initialize JWT
 	utils.InitJWT()
 
+	// Initialize middleware logger
+	middleware.InitLogger(logger)
+
 	// Initialize database connection
 	if err := services.InitDB(logger); err != nil {
 		logger.Fatal("Failed to initialize database", zap.Error(err))
@@ -115,7 +122,34 @@ func main() {
 
 	router := gin.New()
 
-	router.Use(ginzap.Ginzap(logger, time.RFC3339, true))
+	router.Use(ginzap.GinzapWithConfig(logger, &ginzap.Config{
+		UTC:        true,
+		TimeFormat: time.RFC3339,
+		Context: ginzap.Fn(func(c *gin.Context) []zapcore.Field {
+			fields := []zapcore.Field{}
+			// log request ID
+			fields = append(fields, zap.String("request_id", requestid.Get(c)))
+
+			// log trace and span ID
+			if trace.SpanFromContext(c.Request.Context()).SpanContext().IsValid() {
+				fields = append(fields, zap.String("trace_id", trace.SpanFromContext(c.Request.Context()).SpanContext().TraceID().String()))
+				fields = append(fields, zap.String("span_id", trace.SpanFromContext(c.Request.Context()).SpanContext().SpanID().String()))
+			}
+
+			// log client IP
+			fields = append(fields, zap.String("client_ip", c.ClientIP()))
+
+			// log request body
+			var body []byte
+			var buf bytes.Buffer
+			tee := io.TeeReader(c.Request.Body, &buf)
+			body, _ = io.ReadAll(tee)
+			c.Request.Body = io.NopCloser(&buf)
+			fields = append(fields, zap.String("body", string(body)))
+
+			return fields
+		}),
+	}))
 	router.Use(ginzap.RecoveryWithZap(logger, true))
 	router.Use(requestid.New())
 	defaultProxies := []string{
