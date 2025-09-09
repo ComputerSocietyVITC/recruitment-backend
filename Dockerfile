@@ -35,7 +35,7 @@ COPY . .
 # CGO_ENABLED=0 for static binary
 # -ldflags="-w -s" removes debug info and symbol table to reduce size
 # -trimpath removes absolute paths from compiled executable
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+RUN CGO_ENABLED=0 go build \
     -ldflags="-w -s -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')" \
     -trimpath \
     -a -installsuffix cgo \
@@ -44,7 +44,8 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 
 # Compress binary with UPX (optional, can reduce size by ~50-70%)
 # Comment out if you prefer faster startup over smaller size
-RUN upx --best --lzma recruitment-backend
+# Skip UPX for ARM64 as it can cause issues with cross-compilation
+RUN if [ "${TARGETARCH}" = "amd64" ]; then upx --best --lzma recruitment-backend; fi
 
 # =============================================================================
 # Stage 2: Final runtime stage using minimal distroless image
