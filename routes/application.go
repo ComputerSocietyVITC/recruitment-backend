@@ -37,7 +37,7 @@ func GetAllApplications(c *gin.Context) {
 		// Updated scan to match actual database columns: id, user_id, department, submitted, created_at, updated_at
 		err := rows.Scan(
 			&app.ID, &app.UserID, &app.Department, &app.Submitted,
-			&app.CreatedAt, &app.UpdatedAt,
+			&app.ChickenedOut, &app.CreatedAt, &app.UpdatedAt,
 		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -89,12 +89,13 @@ func CreateApplication(c *gin.Context) {
 	}
 
 	application := models.Application{
-		ID:         uuid.New(),
-		UserID:     userID,
-		Department: req.Department,
-		Submitted:  false,
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
+		ID:           uuid.New(),
+		UserID:       userID,
+		Department:   req.Department,
+		Submitted:    false,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+		ChickenedOut: false,
 	}
 
 	ctx := context.Background()
@@ -125,10 +126,10 @@ func CreateApplication(c *gin.Context) {
 
 	err = services.DB.QueryRow(ctx, queries.CreateApplicationQuery,
 		application.ID, application.UserID, application.Department,
-		application.Submitted, application.CreatedAt, application.UpdatedAt,
+		application.Submitted, application.ChickenedOut, application.CreatedAt, application.UpdatedAt,
 	).Scan(
 		&application.ID, &application.UserID, &application.Department,
-		&application.Submitted, &application.CreatedAt, &application.UpdatedAt,
+		&application.Submitted, &application.ChickenedOut, &application.CreatedAt, &application.UpdatedAt,
 	)
 
 	if err != nil {
@@ -193,7 +194,7 @@ func GetMyApplications(c *gin.Context) {
 		// Updated scan to match actual database columns
 		err := rows.Scan(
 			&app.ID, &app.UserID, &app.Department, &app.Submitted,
-			&app.CreatedAt, &app.UpdatedAt,
+			&app.ChickenedOut, &app.CreatedAt, &app.UpdatedAt,
 		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -340,7 +341,7 @@ func SubmitApplication(c *gin.Context) {
 	err = services.DB.QueryRow(ctx, queries.SubmitApplicationQuery,
 		applicationID, time.Now(), userID).Scan(
 		&application.ID, &application.UserID, &application.Department,
-		&application.Submitted, &application.CreatedAt, &application.UpdatedAt,
+		&application.Submitted, &application.ChickenedOut, &application.CreatedAt, &application.UpdatedAt,
 	)
 
 	if err != nil {
