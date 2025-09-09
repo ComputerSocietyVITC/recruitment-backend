@@ -93,6 +93,9 @@ func main() {
 	// Initialize JWT
 	utils.InitJWT()
 
+	// Initialize middleware logger
+	middleware.InitLogger(logger)
+
 	// Initialize database connection
 	if err := services.InitDB(logger); err != nil {
 		logger.Fatal("Failed to initialize database", zap.Error(err))

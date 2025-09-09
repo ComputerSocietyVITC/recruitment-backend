@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"log"
 	"net"
 	"net/http"
 	"slices"
@@ -15,13 +14,23 @@ import (
 	"github.com/google/uuid"
 	"github.com/ulule/limiter/v3"
 	"github.com/ulule/limiter/v3/drivers/store/memory"
+	"go.uber.org/zap"
 )
+
+var logger *zap.Logger
+
+// InitLogger initializes the middleware logger
+func InitLogger(l *zap.Logger) {
+	logger = l
+}
 
 // JWTAuthMiddleware validates JWT tokens and sets user information in context
 func JWTAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
-		log.Println("Authorization Header Received:", authHeader)
+		if logger != nil {
+			logger.Info("Authorization Header Received", zap.String("header", authHeader))
+		}
 		if authHeader == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": "Authorization header is required",
@@ -40,7 +49,9 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 		}
 
 		tokenString := tokenParts[1]
-		log.Println("Extracted Token:", tokenString)
+		if logger != nil {
+			logger.Info("Extracted Token", zap.String("token", tokenString))
+		}
 		claims, err := utils.ValidateJWT(tokenString)
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{
@@ -169,7 +180,9 @@ func RateLimiterMiddleware(config RateLimiterConfig) gin.HandlerFunc {
 		// Check rate limit
 		context, err := instance.Get(c.Request.Context(), clientIP)
 		if err != nil {
-			log.Printf("Rate limiter error: %v", err)
+			if logger != nil {
+				logger.Error("Rate limiter error", zap.Error(err))
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": "Internal server error",
 			})
