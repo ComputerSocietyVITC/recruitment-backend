@@ -41,11 +41,10 @@ func UpdateUserRole(c *gin.Context) {
 		return
 	}
 
-	// Validate role
-	if req.Role != models.RoleApplicant && req.Role != models.RoleEvaluator &&
-		req.Role != models.RoleAdmin && req.Role != models.RoleSuperAdmin {
+	// Validate role - only applicant role is supported
+	if req.Role != models.RoleApplicant {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid role specified",
+			"error": "Invalid role specified - only 'applicant' role is supported",
 		})
 		return
 	}
@@ -54,7 +53,7 @@ func UpdateUserRole(c *gin.Context) {
 	var user models.User
 
 	err = services.DB.QueryRow(ctx, queries.UpdateUserRoleQuery, userID, req.Role).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber,
+		&user.ID, &user.FullName, &user.Email, &user.RegNum,
 		&user.Role, &user.CreatedAt, &user.UpdatedAt,
 	)
 
@@ -103,7 +102,7 @@ func VerifyUser(c *gin.Context) {
 	var user models.User
 
 	err = services.DB.QueryRow(ctx, queries.UpdateUserVerificationStatusQuery, userID, req.Verified).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber,
+		&user.ID, &user.FullName, &user.Email, &user.RegNum,
 		&user.Verified, &user.Role, &user.CreatedAt, &user.UpdatedAt,
 	)
 

@@ -101,21 +101,6 @@ func RoleBasedAuthMiddleware(allowedRoles ...models.UserRole) gin.HandlerFunc {
 	}
 }
 
-// SuperAdminOnlyMiddleware allows only super admin access
-func SuperAdminOnlyMiddleware() gin.HandlerFunc {
-	return RoleBasedAuthMiddleware(models.RoleSuperAdmin)
-}
-
-// AdminOrAboveMiddleware allows admin and super admin access
-func AdminOrAboveMiddleware() gin.HandlerFunc {
-	return RoleBasedAuthMiddleware(models.RoleAdmin, models.RoleSuperAdmin)
-}
-
-// EvaluatorOrAboveMiddleware allows evaluator, admin, and super admin access
-func EvaluatorOrAboveMiddleware() gin.HandlerFunc {
-	return RoleBasedAuthMiddleware(models.RoleEvaluator, models.RoleAdmin, models.RoleSuperAdmin)
-}
-
 // RateLimiterConfig holds configuration for rate limiting
 type RateLimiterConfig struct {
 	Rate limiter.Rate
@@ -207,11 +192,11 @@ func RateLimiterMiddleware(config RateLimiterConfig) gin.HandlerFunc {
 }
 
 // DefaultRateLimiter creates a rate limiter with sensible defaults
-// 100 requests per minute per IP
+// 250 requests per minute per IP
 func DefaultRateLimiter() gin.HandlerFunc {
 	rate := limiter.Rate{
 		Period: time.Minute,
-		Limit:  100,
+		Limit:  250,
 	}
 
 	config := RateLimiterConfig{

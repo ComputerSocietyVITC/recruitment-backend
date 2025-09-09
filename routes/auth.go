@@ -89,7 +89,7 @@ func Register(c *gin.Context) {
 	user := models.User{
 		FullName:            req.FullName,
 		Email:               req.Email,
-		PhoneNumber:         req.PhoneNumber,
+		RegNum:              req.RegNum,
 		HashedPassword:      string(hashedPassword),
 		Role:                req.Role,
 		Verified:            false,
@@ -99,11 +99,11 @@ func Register(c *gin.Context) {
 
 	ctx := context.Background()
 	err = services.DB.QueryRow(ctx, queries.CreateUserQuery,
-		user.FullName, user.Email, user.PhoneNumber, user.Verified, user.ResetToken,
+		user.FullName, user.Email, user.RegNum, user.Verified, user.ResetToken,
 		user.ResetTokenExpiresAt, user.HashedPassword, user.Role,
 	).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified,
-		&user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
+		&user.ID, &user.FullName, &user.Email, &user.RegNum, &user.Verified,
+		&user.Role, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err != nil {
@@ -143,8 +143,8 @@ func VerifyOTP(c *gin.Context) {
 	ctx := context.Background()
 	var user models.User
 	err := services.DB.QueryRow(ctx, queries.GetUserByEmailQuery, req.Email).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified, &user.ResetToken,
-		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
+		&user.ID, &user.FullName, &user.Email, &user.RegNum, &user.Verified, &user.ResetToken,
+		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err != nil {
@@ -170,7 +170,7 @@ func VerifyOTP(c *gin.Context) {
 
 	if *user.ResetToken == req.Code {
 		err := services.DB.QueryRow(ctx, queries.UpdateUserVerificationStatusQuery, user.ID, true).Scan(
-			&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified, &user.Role, &user.CreatedAt, &user.UpdatedAt,
+			&user.ID, &user.FullName, &user.Email, &user.RegNum, &user.Verified, &user.Role, &user.CreatedAt, &user.UpdatedAt,
 		)
 
 		if err != nil {
@@ -206,8 +206,8 @@ func ResendVerificationOTP(c *gin.Context) {
 	ctx := context.Background()
 	var user models.User
 	err := services.DB.QueryRow(ctx, queries.GetUserByEmailQuery, req.Email).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified, &user.ResetToken,
-		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
+		&user.ID, &user.FullName, &user.Email, &user.RegNum, &user.Verified, &user.ResetToken,
+		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err != nil {
@@ -238,7 +238,7 @@ func ResendVerificationOTP(c *gin.Context) {
 
 	// Update user's reset token and expiration time
 	err = services.DB.QueryRow(ctx, queries.UpdateUserResetTokenQuery, user.ID, otp, tokenExpiresAt).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified, &user.ResetToken,
+		&user.ID, &user.FullName, &user.Email, &user.RegNum, &user.Verified, &user.ResetToken,
 		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.CreatedAt, &user.UpdatedAt,
 	)
 
@@ -281,8 +281,8 @@ func Login(c *gin.Context) {
 	var user models.User
 
 	err := services.DB.QueryRow(ctx, queries.GetUserByEmailQuery, req.Email).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified, &user.ResetToken,
-		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
+		&user.ID, &user.FullName, &user.Email, &user.RegNum, &user.Verified, &user.ResetToken,
+		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err != nil {
@@ -366,8 +366,8 @@ func GetProfile(c *gin.Context) {
 	var user models.User
 
 	err := services.DB.QueryRow(ctx, queries.GetUserByIDQuery, userID).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified,
-		&user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
+		&user.ID, &user.FullName, &user.Email, &user.RegNum, &user.Verified,
+		&user.Role, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err != nil {
@@ -394,8 +394,8 @@ func ForgotPassword(c *gin.Context) {
 	ctx := context.Background()
 	var user models.User
 	err := services.DB.QueryRow(ctx, queries.GetUserByEmailQuery, req.Email).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified, &user.ResetToken,
-		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
+		&user.ID, &user.FullName, &user.Email, &user.RegNum, &user.Verified, &user.ResetToken,
+		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err != nil {
@@ -427,7 +427,7 @@ func ForgotPassword(c *gin.Context) {
 
 	// Update user's reset token and expiration time
 	err = services.DB.QueryRow(ctx, queries.UpdateUserResetTokenQuery, user.ID, resetToken, tokenExpiresAt).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified, &user.ResetToken,
+		&user.ID, &user.FullName, &user.Email, &user.RegNum, &user.Verified, &user.ResetToken,
 		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.CreatedAt, &user.UpdatedAt,
 	)
 
@@ -470,8 +470,8 @@ func ResetPassword(c *gin.Context) {
 	ctx := context.Background()
 	var user models.User
 	err := services.DB.QueryRow(ctx, queries.GetUserByEmailQuery, req.Email).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified, &user.ResetToken,
-		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
+		&user.ID, &user.FullName, &user.Email, &user.RegNum, &user.Verified, &user.ResetToken,
+		&user.ResetTokenExpiresAt, &user.HashedPassword, &user.Role, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err != nil {
@@ -522,7 +522,7 @@ func ResetPassword(c *gin.Context) {
 
 	// Update password and clear reset token
 	err = services.DB.QueryRow(ctx, queries.UpdateUserPasswordQuery, user.ID, string(hashedPassword)).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified, &user.Role, &user.CreatedAt, &user.UpdatedAt,
+		&user.ID, &user.FullName, &user.Email, &user.RegNum, &user.Verified, &user.Role, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err != nil {
@@ -546,36 +546,5 @@ func ResetPassword(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Password has been reset successfully",
-	})
-}
-
-// ChickenOut handles POST /auth/chicken-out - marks the user as chickened out
-func ChickenOut(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "User ID not found in token",
-		})
-		return
-	}
-
-	ctx := context.Background()
-	var user models.User
-
-	err := services.DB.QueryRow(ctx, queries.UpdateUserChickenedOutStatusQuery, userID, true).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified,
-		&user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
-	)
-
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "User not found",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "You have successfully chickened out.",
-		"user":    user.ToResponse(),
 	})
 }

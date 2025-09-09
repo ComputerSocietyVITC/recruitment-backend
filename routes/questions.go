@@ -30,7 +30,7 @@ func GetQuestions(c *gin.Context) {
 	var questions []models.Question
 	for rows.Next() {
 		var q models.Question
-		err := rows.Scan(&q.ID, &q.Department, &q.Body, &q.CreatedAt)
+		err := rows.Scan(&q.ID, &q.Department, &q.Title, &q.Body, &q.CreatedAt)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to scan question", "details": err.Error()})
 			return
@@ -60,7 +60,7 @@ func GetAllQuestions(c *gin.Context) {
 	var questions []models.Question
 	for rows.Next() {
 		var q models.Question
-		err := rows.Scan(&q.ID, &q.Department, &q.Body, &q.CreatedAt)
+		err := rows.Scan(&q.ID, &q.Department, &q.Title, &q.Body, &q.CreatedAt)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to scan question", "details": err.Error()})
 			return
@@ -94,7 +94,7 @@ func GetQuestionByID(c *gin.Context) {
 	row := services.DB.QueryRow(ctx, queries.GetQuestionByIDQuery, questionID)
 
 	var q models.Question
-	err = row.Scan(&q.ID, &q.Department, &q.Body, &q.CreatedAt)
+	err = row.Scan(&q.ID, &q.Department, &q.Title, &q.Body, &q.CreatedAt)
 	if err != nil {
 		if err.Error() == "no rows in result set" {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Question not found"})
@@ -105,6 +105,52 @@ func GetQuestionByID(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, q)
+}
+
+// GetQuestionByApplicationID returns all questions for a specific application based on the application's department
+func GetQuestionByApplicationID(c *gin.Context) {
+	idParam := c.Param("id")
+	applicationID, err := uuid.Parse(idParam)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid application ID format"})
+		return
+	}
+
+	ctx := context.Background()
+	rows, err := services.DB.Query(ctx, queries.GetQuestionByApplicationIDQuery, applicationID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch questions for application", "details": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	var questions []models.Question
+	for rows.Next() {
+		var q models.Question
+		err := rows.Scan(&q.ID, &q.Department, &q.Title, &q.Body, &q.CreatedAt)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to scan question", "details": err.Error()})
+			return
+		}
+
+		questions = append(questions, q)
+	}
+
+	if err = rows.Err(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error occurred while reading questions", "details": err.Error()})
+		return
+	}
+
+	if len(questions) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "No questions found for this application or application not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":   "Questions fetched successfully",
+		"questions": questions,
+		"count":     len(questions),
+	})
 }
 
 // CreateQuestion creates a new question
@@ -131,10 +177,10 @@ func CreateQuestion(c *gin.Context) {
 	createdAt := time.Now()
 
 	ctx := context.Background()
-	row := services.DB.QueryRow(ctx, queries.CreateQuestionQuery, questionID, req.Department, req.Body, createdAt)
+	row := services.DB.QueryRow(ctx, queries.CreateQuestionQuery, questionID, req.Department, req.Title, req.Body, createdAt)
 
 	var q models.Question
-	err := row.Scan(&q.ID, &q.Department, &q.Body, &q.CreatedAt)
+	err := row.Scan(&q.ID, &q.Department, &q.Title, &q.Body, &q.CreatedAt)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create question", "details": err.Error()})
 		return

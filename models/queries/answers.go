@@ -9,6 +9,10 @@ const CheckApplicationOwnershipQuery = `
 SELECT user_id FROM applications WHERE id = $1 AND submitted = false
 `
 
+const CheckApplicationAndDepartmentOwnershipQuery = `
+SELECT user_id, department FROM applications WHERE id = $1 AND submitted = false
+`
+
 const UpsertAnswerQuery = `
 INSERT INTO answers (id, application_id, user_id, question_id, body, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7)

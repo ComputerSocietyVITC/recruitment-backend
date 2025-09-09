@@ -36,7 +36,7 @@ func CreateUser(c *gin.Context) {
 		c.Abort()
 		return
 	}
-	role, ok := userRole.(models.UserRole)
+	_, ok := userRole.(models.UserRole)
 	if !ok {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Invalid user role format",
@@ -44,15 +44,7 @@ func CreateUser(c *gin.Context) {
 		c.Abort()
 		return
 	}
-	// Only super admins can create super admins
-	if req.Role == models.RoleSuperAdmin {
-		if role != models.RoleSuperAdmin {
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": "Only super admins can create super admins",
-			})
-			return
-		}
-	}
+	// Note: Only applicant role is supported now
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -65,7 +57,7 @@ func CreateUser(c *gin.Context) {
 	user := models.User{
 		FullName:            req.FullName,
 		Email:               req.Email,
-		PhoneNumber:         req.PhoneNumber,
+		RegNum:              req.RegNum,
 		Verified:            false,
 		ResetToken:          nil,
 		ResetTokenExpiresAt: nil,
@@ -75,12 +67,12 @@ func CreateUser(c *gin.Context) {
 
 	ctx := context.Background()
 	err = services.DB.QueryRow(ctx, queries.CreateUserQuery,
-		user.FullName, user.Email, user.PhoneNumber, user.Verified,
+		user.FullName, user.Email, user.RegNum, user.Verified,
 		user.ResetToken, user.ResetTokenExpiresAt,
 		user.HashedPassword, user.Role,
 	).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified,
-		&user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
+		&user.ID, &user.FullName, &user.Email, &user.RegNum, &user.Verified,
+		&user.Role, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err != nil {
@@ -123,8 +115,8 @@ func GetAllUsers(c *gin.Context) {
 	for rows.Next() {
 		var user models.User
 		err := rows.Scan(
-			&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified,
-			&user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
+			&user.ID, &user.FullName, &user.Email, &user.RegNum, &user.Verified,
+			&user.Role, &user.CreatedAt, &user.UpdatedAt,
 		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -165,8 +157,8 @@ func GetUserByID(c *gin.Context) {
 	ctx := context.Background()
 	var user models.User
 	err = services.DB.QueryRow(ctx, queries.GetUserByIDQuery, userID).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified,
-		&user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
+		&user.ID, &user.FullName, &user.Email, &user.RegNum, &user.Verified,
+		&user.Role, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err != nil {
@@ -205,8 +197,8 @@ func DeleteUser(c *gin.Context) {
 	ctx := context.Background()
 	var existingUser models.User
 	err = services.DB.QueryRow(ctx, queries.GetUserByIDQuery, userID).Scan(
-		&existingUser.ID, &existingUser.FullName, &existingUser.Email, &existingUser.PhoneNumber,
-		&existingUser.Verified, &existingUser.Role, &existingUser.ChickenedOut, &existingUser.CreatedAt, &existingUser.UpdatedAt,
+		&existingUser.ID, &existingUser.FullName, &existingUser.Email, &existingUser.RegNum,
+		&existingUser.Verified, &existingUser.Role, &existingUser.CreatedAt, &existingUser.UpdatedAt,
 	)
 
 	if err != nil {
@@ -233,7 +225,7 @@ func DeleteUser(c *gin.Context) {
 		return
 	}
 
-	role, ok := userRole.(models.UserRole)
+	_, ok := userRole.(models.UserRole)
 	if !ok {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Invalid user role format",
@@ -241,13 +233,7 @@ func DeleteUser(c *gin.Context) {
 		return
 	}
 
-	// Only super admins can delete super admins
-	if existingUser.Role == models.RoleSuperAdmin && role != models.RoleSuperAdmin {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Only super admins can delete super admins",
-		})
-		return
-	}
+	// Note: Only applicant role exists now, no special deletion restrictions needed
 
 	// Prevent users from deleting themselves
 	userIDFromContext, exists := c.Get("userID")
@@ -296,8 +282,8 @@ func GetUserByEmail(c *gin.Context) {
 	ctx := context.Background()
 	var user models.User
 	err := services.DB.QueryRow(ctx, queries.GetUserByEmailPublicQuery, email).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified,
-		&user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
+		&user.ID, &user.FullName, &user.Email, &user.RegNum, &user.Verified,
+		&user.Role, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err != nil {

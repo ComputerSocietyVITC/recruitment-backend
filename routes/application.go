@@ -397,3 +397,62 @@ func DeleteApplication(c *gin.Context) {
 		"message": "Application deleted successfully",
 	})
 }
+
+// ChickenOut handles POST /application/:id/chicken-out - marks the application as chickened out
+func ChickenOut(c *gin.Context) {
+	// Get application ID from URL
+	applicationIDStr := c.Param("id")
+	applicationID, err := uuid.Parse(applicationIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid application ID"})
+		return
+	}
+
+	// Get user ID from JWT token
+	userIDInterface, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+	userID := userIDInterface.(uuid.UUID)
+
+	ctx := context.Background()
+
+	// Verify user owns this application and get department
+	var appUserID uuid.UUID
+	var department string
+	err = services.DB.QueryRow(ctx, queries.CheckApplicationAndDepartmentOwnershipQuery, applicationID).Scan(&appUserID, &department)
+
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Application not found"})
+		return
+	}
+
+	if appUserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+		return
+	}
+
+	// Check if application is for technical department
+	if department != "technical" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Chicken out is only allowed for technical department applications",
+			"details": map[string]interface{}{
+				"current_department": department,
+				"allowed_department": "technical",
+			},
+		})
+		return
+	}
+
+	// Update the chickened_out status
+	_, err = services.DB.Exec(ctx, queries.UpdateApplicationChickenedOutStatusQuery, applicationID, userID, true)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Couldn't update chickened out status"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Successfully chickened out of technical application",
+	})
+}

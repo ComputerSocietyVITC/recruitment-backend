@@ -3,19 +3,18 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Define user roles enum
-CREATE TYPE user_role AS ENUM ('applicant', 'evaluator', 'admin', 'super_admin');
+CREATE TYPE user_role AS ENUM ('applicant');
 
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     full_name VARCHAR(255) NOT NULL,
     email VARCHAR(255) NOT NULL UNIQUE,
     verified BOOLEAN NOT NULL DEFAULT FALSE,
-    phone_number VARCHAR(15) NOT NULL,
+    reg_num VARCHAR(15) NOT NULL,
     hashed_password TEXT NOT NULL,
     reset_token TEXT,
     reset_token_expires_at TIMESTAMP WITH TIME ZONE,
     role user_role NOT NULL DEFAULT 'applicant',
-    chickened_out BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
@@ -34,12 +33,13 @@ FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column();
 
 -- Define department enum for questions
-CREATE TYPE department AS ENUM ('technical', 'marketing', 'management', 'social_media');
+CREATE TYPE department AS ENUM ('technical', 'design', 'management', 'social');
 
 -- Create questions table
 CREATE TABLE IF NOT EXISTS questions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     department department NOT NULL,
+    title TEXT NOT NULL,
     body TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS applications (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     department department NOT NULL,
     submitted BOOLEAN NOT NULL DEFAULT FALSE,
+    chickened_out BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     UNIQUE(user_id, department)
@@ -80,13 +81,13 @@ FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column();
 
 -- Optional: Create a super admin user (update the email/password as needed)
-INSERT INTO users (id, full_name, email, verified, phone_number, hashed_password, role)
-VALUES (
-    uuid_generate_v4(),
-    'Root',
-    'admin@comp.socks',
-    true,
-    '+91 9898888110',
-    '$2a$10$Q8Ltxi7JDz.VJydOo1d73eorls8XOL1OihDfSMwiZo.mJ0fNip.1C',
-    'super_admin'
-)
+-- INSERT INTO users (id, full_name, email, verified, reg_num, hashed_password, role)
+-- VALUES (
+--     uuid_generate_v4(),
+--     'Root',
+--     'admin@comp.socks',
+--     true,
+--     '+91 9898888110',
+--     '$2a$10$Q8Ltxi7JDz.VJydOo1d73eorls8XOL1OihDfSMwiZo.mJ0fNip.1C',
+--     'super_admin'
+-- )

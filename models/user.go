@@ -10,10 +10,7 @@ import (
 type UserRole string
 
 const (
-	RoleApplicant  UserRole = "applicant"
-	RoleEvaluator  UserRole = "evaluator"
-	RoleAdmin      UserRole = "admin"
-	RoleSuperAdmin UserRole = "super_admin"
+	RoleApplicant UserRole = "applicant"
 )
 
 // User represents a user in the system
@@ -21,10 +18,9 @@ type User struct {
 	ID                  uuid.UUID  `json:"id" db:"id"`
 	FullName            string     `json:"full_name" db:"full_name"`
 	Email               string     `json:"email" db:"email"`
-	PhoneNumber         string     `json:"phone_number" db:"phone_number"`
+	RegNum              string     `json:"reg_num" db:"reg_num"`
 	HashedPassword      string     `json:"-" db:"hashed_password"` // JSON tag "-" to exclude from JSON serialization
 	Verified            bool       `json:"verified" db:"verified"`
-	ChickenedOut        bool       `json:"chickened_out" db:"chickened_out"`
 	ResetToken          *string    `json:"reset_token" db:"reset_token"`
 	ResetTokenExpiresAt *time.Time `json:"reset_token_expires_at" db:"reset_token_expires_at"`
 	Role                UserRole   `json:"role" db:"role"`
@@ -34,11 +30,11 @@ type User struct {
 
 // CreateUserRequest represents the request body for creating a user
 type CreateUserRequest struct {
-	FullName    string   `json:"full_name" binding:"required"`
-	Email       string   `json:"email" binding:"required,email"`
-	PhoneNumber string   `json:"phone_number" binding:"required"`
-	Password    string   `json:"password" binding:"required,min=6"` // Plain password from request
-	Role        UserRole `json:"role,omitempty"`                    // Optional role field for admin creation
+	FullName string   `json:"full_name" binding:"required"`
+	Email    string   `json:"email" binding:"required,email"`
+	RegNum   string   `json:"reg_num" binding:"required"`
+	Password string   `json:"password" binding:"required,min=6"` // Plain password from request
+	Role     UserRole `json:"role,omitempty"`                    // Optional role field for admin creation
 }
 
 // VerifyOTPRequest represents the request body for verifying an OTP
@@ -78,28 +74,26 @@ type AuthResponse struct {
 
 // UserResponse represents the user data returned in API responses
 type UserResponse struct {
-	ID           uuid.UUID `json:"id"`
-	FullName     string    `json:"full_name"`
-	Email        string    `json:"email"`
-	PhoneNumber  string    `json:"phone_number"`
-	Verified     bool      `json:"verified"`
-	ChickenedOut bool      `json:"chickened_out"`
-	Role         UserRole  `json:"role"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID        uuid.UUID `json:"id"`
+	FullName  string    `json:"full_name"`
+	Email     string    `json:"email"`
+	RegNum    string    `json:"reg_num"`
+	Verified  bool      `json:"verified"`
+	Role      UserRole  `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // ToResponse converts a User to UserResponse (excludes sensitive data)
 func (u *User) ToResponse() UserResponse {
 	return UserResponse{
-		ID:           u.ID,
-		FullName:     u.FullName,
-		Email:        u.Email,
-		PhoneNumber:  u.PhoneNumber,
-		Verified:     u.Verified,
-		ChickenedOut: u.ChickenedOut,
-		Role:         u.Role,
-		CreatedAt:    u.CreatedAt,
-		UpdatedAt:    u.UpdatedAt,
+		ID:        u.ID,
+		FullName:  u.FullName,
+		Email:     u.Email,
+		RegNum:    u.RegNum,
+		Verified:  u.Verified,
+		Role:      u.Role,
+		CreatedAt: u.CreatedAt,
+		UpdatedAt: u.UpdatedAt,
 	}
 }
