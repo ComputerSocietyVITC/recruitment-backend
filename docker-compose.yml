@@ -1,62 +1,64 @@
+# =============================================================================
+# Docker Compose for recruitment backend
+# =============================================================================
 version: '3.8'
 
 services:
-  # PostgreSQL Database
-  postgres:
-    image: postgres:17-alpine
-    container_name: recruitment_postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-recruitment_db}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-recruitment_password123}
-      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
-    volumes:
-      - /var/data/recruitment/db:/var/lib/postgresql/data
+  # Main application service
+  recruitment-backend:
+#    build:
+#      context: .
+#      dockerfile: Dockerfile
+    image: recruitment-backend:latest
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    networks:
-      - recruitment_network
+      - "8080:8080"
+    environment:
+      - ENV=production
+      - PORT=8080
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=recruitment_user
+      - DB_PASSWORD=recruitment_password
+      - DB_NAME=recruitment_db
+      - DB_MAX_CONNS=25
+      - DB_MIN_CONNS=5
+      # Add other environment variables as needed
+      # These should be overridden in production with actual values
+      - JWT_SECRET='Kz+3942TSYuNybFQAx2ieJUJOWksberr5g9i+TFjry4='
+      - JWT_EXPIRY_DURATION=24h
+      - EMAIL_VERIFICATION_OTP_DURATION=10m
+      - PASSWORD_RESET_OTP_DURATION=30m
+      - ADMIN_EMAIL=admin@comp.socks
+      - ADMIN_PASSWORD=dCeKQFq8TdFm
+      - ADMIN_PHONE=+911000000000
+      - TRUSTED_PROXIES=127.0.0.1
+      - CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # PostgreSQL database service
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: recruitment_db
+      POSTGRES_USER: recruitment_user
+      POSTGRES_PASSWORD: recruitment_password
+    # ports:
+    #   - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./models/migrations:/docker-entrypoint-initdb.d/migrations:ro
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-recruitment_db}"]
+      test: ["CMD-SHELL", "pg_isready -U recruitment_user -d recruitment_db"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Go Application
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: recruitment_app
-    restart: unless-stopped
-    ports:
-      - "${APP_PORT:-8080}:8080"
-    env_file:
-      - .env
-    environment:
-      # Database Configuration
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: ${POSTGRES_USER:-postgres}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-recruitment_password123}
-      DB_NAME: ${POSTGRES_DB:-recruitment_db}
-      
-      # Server Configuration
-      PORT: 8080
-      GIN_MODE: ${GIN_MODE:-release}
-      ENV: ${ENV:-production}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - recruitment_network
-    command: ["./wait-for-postgres.sh", "postgres", "5432", "${POSTGRES_USER:-postgres}", "${POSTGRES_PASSWORD:-recruitment_password123}", "${POSTGRES_DB:-recruitment_db}", "./main"]
-
 volumes:
   postgres_data:
-    driver: local
 
-networks:
-  recruitment_network:
-    driver: bridge
+# Development override file: docker-compose.override.yml
+# Create this file for development-specific configurations

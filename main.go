@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
+	"flag"
+	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/ComputerSocietyVITC/recruitment-backend/middleware"
@@ -13,16 +17,58 @@ import (
 	"github.com/gin-contrib/requestid"
 	ginzap "github.com/gin-contrib/zap"
 	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
 	"go.uber.org/zap"
 )
 
+// performHealthCheck performs a health check and exits with appropriate code
+func performHealthCheck() {
+	// Load environment variables for database connection
+	if err := utils.LoadEnvironment(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to load environment: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Initialize a simple logger for health check
+	logger, err := zap.NewProduction()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
+		os.Exit(1)
+	}
+	defer logger.Sync()
+
+	// Initialize database connection
+	if err := services.InitDB(logger); err != nil {
+		fmt.Fprintf(os.Stderr, "Database health check failed: %v\n", err)
+		os.Exit(1)
+	}
+	defer services.CloseDB(logger)
+
+	// Test database connectivity with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := services.DB.Ping(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "Database ping failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Health check passed")
+	os.Exit(0)
+}
+
 func main() {
-	// Load environment variables from .env file (only in development)
-	if utils.GetEnvWithDefault("ENV", "development") == "development" {
-		if err := godotenv.Load(); err != nil {
-			log.Println("No .env file found or error loading it, using system environment variables")
-		}
+	// Parse command line flags
+	healthCheck := flag.Bool("health-check", false, "Perform health check and exit")
+	flag.Parse()
+
+	// If health check flag is provided, perform health check and exit
+	if *healthCheck {
+		performHealthCheck()
+		return
+	}
+
+	if err := utils.LoadEnvironment(); err != nil {
+		log.Fatalf("Failed to load environment: %v", err)
 	}
 
 	if err := utils.ValidateRequiredEnvVars(); err != nil {
@@ -32,9 +78,11 @@ func main() {
 	var logger *zap.Logger
 	var err error
 
-	if utils.GetEnvWithDefault("GIN_MODE", "debug") == "release" {
+	if utils.IsProduction() {
+		gin.SetMode(gin.ReleaseMode)
 		logger, err = zap.NewProduction()
 	} else {
+		gin.SetMode(gin.DebugMode)
 		logger, err = zap.NewDevelopment()
 	}
 	if err != nil {
@@ -51,41 +99,64 @@ func main() {
 	}
 	defer services.CloseDB(logger)
 
+	// Run database migrations
+	if err := services.RunMigrations(logger); err != nil {
+		logger.Fatal("Failed to run database migrations", zap.Error(err))
+	}
+
+	// Create admin user if not exists (based on environment variables)
+	if err := services.CreateAdminUserIfNotExists(logger); err != nil {
+		logger.Fatal("Failed to create admin user", zap.Error(err))
+	}
+
 	// Initialize email sender as a goroutine
 	go services.InitMailer(logger)
 	defer services.CloseMailer(logger)
-
-	// Set Gin to release mode for production logging
-	if utils.GetEnvWithDefault("GIN_MODE", "debug") == "release" {
-		gin.SetMode(gin.ReleaseMode)
-	}
 
 	router := gin.New()
 
 	router.Use(ginzap.Ginzap(logger, time.RFC3339, true))
 	router.Use(ginzap.RecoveryWithZap(logger, true))
 	router.Use(requestid.New())
-	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"*"}, // Configure properly for production
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Request-ID"},
-		ExposeHeaders:    []string{"X-Request-ID"},
-		AllowCredentials: true,
-		MaxAge:           12 * time.Hour,
-	}))
-
-	// Set trusted proxies (update during deployment)
-	router.SetTrustedProxies([]string{
+	defaultProxies := []string{
 		"127.0.0.1",
 		"10.0.0.0/8",
 		"172.16.0.0/12",
 		"192.168.0.0/16",
-	})
+	}
+	router.Use(cors.New(cors.Config{
+		AllowOrigins:     utils.GetEnvAsSlice("CORS_ALLOWED_ORIGINS", ",", []string{"*"}),
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Request-ID"},
+		ExposeHeaders:    []string{"X-Request-ID"},
+		AllowCredentials: true,
+	}))
 
-	router.GET("/ping", func(c *gin.Context) {
+	router.SetTrustedProxies(utils.GetEnvAsSlice("TRUSTED_PROXIES", ",", defaultProxies))
+
+	// Health check endpoint for container orchestration
+	router.GET("/health", func(c *gin.Context) {
+		// Check database connectivity
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
+		defer cancel()
+
+		if err := services.DB.Ping(ctx); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"status":     "unhealthy",
+				"error":      "database connection failed",
+				"timestamp":  time.Now().UTC().Format(time.RFC3339),
+				"request_id": requestid.Get(c),
+			})
+			return
+		}
+
 		c.JSON(http.StatusOK, gin.H{
-			"message":    "pong",
+			"status":     "healthy",
+			"timestamp":  time.Now().UTC().Format(time.RFC3339),
 			"request_id": requestid.Get(c),
+			"checks": gin.H{
+				"database": "ok",
+			},
 		})
 	})
 

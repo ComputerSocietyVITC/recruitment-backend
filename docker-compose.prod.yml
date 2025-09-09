@@ -1,0 +1,158 @@
+# =============================================================================
+# Production Docker Compose for recruitment backend
+# =============================================================================
+# Use this file for production deployments
+# Command: docker-compose -f docker-compose.prod.yml up -d
+
+version: '3.8'
+
+services:
+  recruitment-backend:
+    image: recruitment-backend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - GO_VERSION=1.24.6
+        - ALPINE_VERSION=3.18
+    ports:
+      - "8080:8080"
+    environment:
+      - ENV=production
+      - GIN_MODE=release
+      - PORT=8080
+      # Database configuration
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${DB_USER:-recruitment_user}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME:-recruitment_db}
+      - DB_MAX_CONNS=${DB_MAX_CONNS:-25}
+      - DB_MIN_CONNS=${DB_MIN_CONNS:-5}
+      # Security configuration
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRY_DURATION=${JWT_EXPIRY_DURATION:-24h}
+      - EMAIL_VERIFICATION_OTP_DURATION=${EMAIL_VERIFICATION_OTP_DURATION:-10m}
+      - PASSWORD_RESET_OTP_DURATION=${PASSWORD_RESET_OTP_DURATION:-30m}
+      # Network security
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+      # Email configuration
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+          cpus: '0.5'
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    healthcheck:
+      test: ["/recruitment-backend", "--health-check"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME:-recruitment_db}
+      POSTGRES_USER: ${DB_USER:-recruitment_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./models/migrations:/docker-entrypoint-initdb.d/migrations:ro
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-recruitment_user} -d ${DB_NAME:-recruitment_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    security_opt:
+      - no-new-privileges:true
+    # Don't expose port in production unless needed for external access
+    # ports:
+    #   - "5432:5432"
+
+  # Nginx reverse proxy (optional)
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - recruitment-backend
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  # Redis for caching and sessions (optional)
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  default:
+    driver: bridge
