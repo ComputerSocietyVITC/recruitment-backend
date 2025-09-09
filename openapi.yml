@@ -1,0 +1,1138 @@
+openapi: 3.0.4
+info:
+  title: IEEE CS Recruitment Backend API
+  description: |
+    A comprehensive recruitment management system for IEEE Computer Society VIT Chennai.
+
+    ## Features
+    - JWT-based authentication with OTP verification
+    - Department-wise application management
+    - Question and answer management system
+    - Email domain restrictions for VIT domains
+    - Rate limiting and security middleware
+
+    ## Authentication
+    Most endpoints require JWT authentication. Include the token in the Authorization header:
+    ```
+    Authorization: Bearer <jwt_token>
+    ```
+
+    ## Departments
+    The system supports four departments:
+    - `technical` - Technical roles
+    - `design` - Design roles  
+    - `management` - Management roles
+    - `social` - Social roles
+
+    ## User Roles
+    - `applicant` - Default role for new registrations
+  version: 1.0.0
+  contact:
+    name: IEEE Computer Society VIT Chennai
+    url: https://github.com/ComputerSocietyVITC/recruitment-backend
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Development server
+  - url: https://recruitment-api.example.com/api/v1
+    description: Production server
+
+tags:
+  - name: Health Check
+    description: Server health and status endpoints
+  - name: Authentication
+    description: User authentication and authorization endpoints
+  - name: Applications
+    description: Application management endpoints
+  - name: Questions
+    description: Question management endpoints
+  - name: Answers
+    description: Answer management endpoints
+
+paths:
+  /ping:
+    get:
+      tags:
+        - Health Check
+      summary: Health check endpoint
+      description: Check if the server is running and responsive
+      responses:
+        "200":
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: pong
+
+  /auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Register new user
+      description: |
+        Register a new user account. Only applicant role is allowed during registration.
+        Email must be from allowed VIT domains (vit.ac.in, vitstudent.ac.in).
+        An OTP will be sent to the email for verification.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+            examples:
+              student:
+                summary: Student registration
+                value:
+                  full_name: "John Doe"
+                  email: "john.doe@vit.ac.in"
+                  reg_num: "21BCE0001"
+                  password: "securePassword123"
+      responses:
+        "201":
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "User registered successfully. Please check your email for verification code."
+                  user_id:
+                    type: string
+                    format: uuid
+                    example: "550e8400-e29b-41d4-a716-446655440000"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /auth/verify-otp:
+    post:
+      tags:
+        - Authentication
+      summary: Verify email with OTP
+      description: Verify user email address using the OTP sent during registration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyOTPRequest"
+      responses:
+        "200":
+          description: Email verified successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /auth/resend-otp:
+    post:
+      tags:
+        - Authentication
+      summary: Resend verification OTP
+      description: Resend OTP for email verification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResendOTPRequest"
+      responses:
+        "200":
+          description: OTP sent successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Verification code sent to your email"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: User login
+      description: Authenticate user and receive JWT token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: Refresh JWT token
+      description: Refresh JWT token before expiry
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    example: "eyJhbGciOiJIUzI1NiIs..."
+                  message:
+                    type: string
+                    example: "Token refreshed successfully"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /auth/forgot-password:
+    post:
+      tags:
+        - Authentication
+      summary: Initiate password reset
+      description: Send password reset instructions to user email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForgotPasswordRequest"
+      responses:
+        "200":
+          description: Reset instructions sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Password reset instructions sent to your email"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /auth/reset-password:
+    post:
+      tags:
+        - Authentication
+      summary: Reset password
+      description: Reset password using reset token from email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResetPasswordRequest"
+      responses:
+        "200":
+          description: Password reset successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Password reset successful"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /applications:
+    post:
+      tags:
+        - Applications
+      summary: Create new application
+      description: Create a new application for a specific department
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateApplicationRequest"
+      responses:
+        "201":
+          description: Application created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application:
+                    $ref: "#/components/schemas/Application"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Application already exists for this department
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /applications/me:
+    get:
+      tags:
+        - Applications
+      summary: Get current user's applications
+      description: Retrieve all applications for the authenticated user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: User applications retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  applications:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Application"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /applications/{id}/save:
+    patch:
+      tags:
+        - Applications
+      summary: Save application answers (draft)
+      description: Save answers for an application in draft mode
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Application ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveApplicationRequest"
+      responses:
+        "200":
+          description: Application saved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Application saved successfully"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /applications/{id}/submit:
+    post:
+      tags:
+        - Applications
+      summary: Submit application
+      description: Submit application for final review (cannot be modified after submission)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Application ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Application submitted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Application submitted successfully"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /applications/{id}:
+    delete:
+      tags:
+        - Applications
+      summary: Delete application
+      description: Delete an application (only if not submitted)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Application ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Application deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Application deleted successfully"
+        "400":
+          description: Cannot delete submitted application
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /applications/{id}/chicken-out:
+    post:
+      tags:
+        - Applications
+      summary: Chicken out of application
+      description: Mark an application as chickened out (withdrawn)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Application ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Successfully chickened out of application
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "You have successfully chickened out of this application"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /questions/application/{id}:
+    get:
+      tags:
+        - Questions
+      summary: Get questions for application
+      description: Retrieve questions for a specific application by application ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Application ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Questions retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  questions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Question"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /questions/{id}:
+    get:
+      tags:
+        - Questions
+      summary: Get question by ID
+      description: Retrieve a specific question by its ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Question ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Question retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  question:
+                    $ref: "#/components/schemas/Question"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /answers:
+    post:
+      tags:
+        - Answers
+      summary: Create or update answer
+      description: Create or update an answer for a specific question
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostAnswerRequest"
+      responses:
+        "200":
+          description: Answer updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  answer:
+                    $ref: "#/components/schemas/Answer"
+        "201":
+          description: Answer created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  answer:
+                    $ref: "#/components/schemas/Answer"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /answers/application/{id}:
+    get:
+      tags:
+        - Answers
+      summary: Get user answers for application
+      description: Get current user's answers for a specific application
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Application ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Answers retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  answers:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Answer"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token obtained from login or registration verification.
+        Include in the Authorization header as: `Bearer <token>`
+
+  schemas:
+    # Enums
+    UserRole:
+      type: string
+      enum:
+        - applicant
+      description: |
+        User role levels:
+        - `applicant`: Default role for new users
+
+    Department:
+      type: string
+      enum:
+        - technical
+        - design
+        - management
+        - social
+      description: Available departments for applications
+
+    # Core Models
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        full_name:
+          type: string
+          example: "John Doe"
+        email:
+          type: string
+          format: email
+          example: "john.doe@vit.ac.in"
+        reg_num:
+          type: string
+          example: "21BCE0001"
+        verified:
+          type: boolean
+          example: true
+          description: Whether the user's email is verified
+        role:
+          $ref: "#/components/schemas/UserRole"
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-09-09T10:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2025-09-09T10:05:00Z"
+      required:
+        - id
+        - full_name
+        - email
+        - reg_num
+        - verified
+        - role
+        - created_at
+        - updated_at
+
+    Application:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        user_id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440001"
+        department:
+          $ref: "#/components/schemas/Department"
+        submitted:
+          type: boolean
+          example: false
+          description: Whether the application has been submitted for review
+        chickened_out:
+          type: boolean
+          example: false
+          description: Whether the user has withdrawn from this application
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-09-09T10:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2025-09-09T10:05:00Z"
+      required:
+        - id
+        - user_id
+        - department
+        - submitted
+        - chickened_out
+        - created_at
+        - updated_at
+
+    Question:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        department:
+          $ref: "#/components/schemas/Department"
+        title:
+          type: string
+          example: "API Design Question"
+          description: The question title
+        body:
+          type: string
+          example: "Explain the difference between REST and GraphQL APIs."
+          description: The question text
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-09-09T10:00:00Z"
+      required:
+        - id
+        - department
+        - title
+        - body
+        - created_at
+
+    Answer:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        application_id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440001"
+        question_id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440002"
+        body:
+          type: string
+          example: "REST is an architectural style while GraphQL is a query language..."
+          description: The answer text
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-09-09T10:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2025-09-09T10:05:00Z"
+      required:
+        - id
+        - application_id
+        - question_id
+        - body
+        - created_at
+        - updated_at
+
+    # Request/Response Models
+    CreateUserRequest:
+      type: object
+      properties:
+        full_name:
+          type: string
+          minLength: 1
+          example: "John Doe"
+        email:
+          type: string
+          format: email
+          example: "john.doe@vit.ac.in"
+          description: Must be from allowed VIT domains
+        reg_num:
+          type: string
+          example: "21BCE0001"
+        password:
+          type: string
+          minLength: 6
+          example: "securePassword123"
+          description: Minimum 6 characters
+        role:
+          $ref: "#/components/schemas/UserRole"
+          description: Optional - defaults to 'applicant' for registration
+      required:
+        - full_name
+        - email
+        - reg_num
+        - password
+
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          example: "john.doe@vit.ac.in"
+        password:
+          type: string
+          example: "securePassword123"
+      required:
+        - email
+        - password
+
+    VerifyOTPRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          example: "john.doe@vit.ac.in"
+        code:
+          type: string
+          pattern: "^[0-9]{6}$"
+          example: "123456"
+          description: 6-digit OTP code
+      required:
+        - email
+        - code
+
+    ResendOTPRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          example: "john.doe@vit.ac.in"
+      required:
+        - email
+
+    ForgotPasswordRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          example: "john.doe@vit.ac.in"
+      required:
+        - email
+
+    ResetPasswordRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          example: "john.doe@vit.ac.in"
+        reset_token:
+          type: string
+          example: "abc123def456"
+          description: Reset token received in email
+        new_password:
+          type: string
+          minLength: 6
+          example: "newSecurePassword123"
+      required:
+        - email
+        - reset_token
+        - new_password
+
+    CreateApplicationRequest:
+      type: object
+      properties:
+        department:
+          $ref: "#/components/schemas/Department"
+      required:
+        - department
+
+    CreateQuestionRequest:
+      type: object
+      properties:
+        department:
+          type: string
+          enum: [technical, design, management, social]
+          example: "technical"
+        title:
+          type: string
+          minLength: 1
+          example: "API Design Question"
+          description: The question title
+        body:
+          type: string
+          minLength: 1
+          example: "What are the key principles of clean code?"
+          description: The question text
+      required:
+        - department
+        - title
+        - body
+
+    AnswerRequest:
+      type: object
+      properties:
+        question_id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        body:
+          type: string
+          minLength: 1
+          example: "My detailed answer to this question..."
+          description: The answer text
+      required:
+        - question_id
+        - body
+
+    SaveApplicationRequest:
+      type: object
+      properties:
+        answers:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnswerRequest"
+          minItems: 1
+          description: Array of answers to save
+      required:
+        - answers
+
+    PostAnswerRequest:
+      type: object
+      properties:
+        application_id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        question_id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440001"
+        body:
+          type: string
+          minLength: 1
+          example: "My detailed answer..."
+          description: The answer text
+      required:
+        - application_id
+        - question_id
+        - body
+
+    AuthResponse:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/UserResponse"
+        token:
+          type: string
+          example: "eyJhbGciOiJIUzI1NiIs..."
+          description: JWT token for authentication
+      required:
+        - user
+        - token
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Invalid request"
+          description: Error message
+        details:
+          type: string
+          example: "Additional error details"
+          description: Optional additional error information
+      required:
+        - error
+
+  responses:
+    BadRequest:
+      description: Bad request - invalid input data
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            validation_error:
+              summary: Validation error
+              value:
+                error: "Invalid request body"
+                details: "email field is required"
+            domain_error:
+              summary: Email domain error
+              value:
+                error: "Email domain is not allowed"
+
+    Unauthorized:
+      description: Unauthorized - invalid or missing JWT token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            missing_token:
+              summary: Missing token
+              value:
+                error: "Authorization header is required"
+            invalid_token:
+              summary: Invalid token
+              value:
+                error: "Invalid or expired token"
+
+    Forbidden:
+      description: Forbidden - insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            insufficient_permissions:
+              summary: Insufficient permissions
+              value:
+                error: "Insufficient permissions"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            user_not_found:
+              summary: User not found
+              value:
+                error: "User not found"
+            application_not_found:
+              summary: Application not found
+              value:
+                error: "Application not found"
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            database_error:
+              summary: Database error
+              value:
+                error: "Internal server error"
+                details: "Database connection failed"
+
+  examples:
+    # User Examples
+    ApplicantUser:
+      summary: Applicant user
+      value:
+        id: "550e8400-e29b-41d4-a716-446655440000"
+        full_name: "John Doe"
+        email: "john.doe@vit.ac.in"
+        reg_num: "21BCE0001"
+        verified: true
+        role: "applicant"
+        created_at: "2025-09-09T10:00:00Z"
+        updated_at: "2025-09-09T10:05:00Z"
+
+    # Application Examples
+    DraftApplication:
+      summary: Draft application
+      value:
+        id: "550e8400-e29b-41d4-a716-446655440000"
+        user_id: "550e8400-e29b-41d4-a716-446655440001"
+        department: "technical"
+        submitted: false
+        chickened_out: false
+        created_at: "2025-09-09T10:00:00Z"
+        updated_at: "2025-09-09T10:15:00Z"
+
+    SubmittedApplication:
+      summary: Submitted application
+      value:
+        id: "550e8400-e29b-41d4-a716-446655440000"
+        user_id: "550e8400-e29b-41d4-a716-446655440001"
+        department: "design"
+        submitted: true
+        chickened_out: false
+        created_at: "2025-09-09T10:00:00Z"
+        updated_at: "2025-09-09T11:00:00Z"
+
+    # Question Examples
+    TechnicalQuestion:
+      summary: Technical question
+      value:
+        id: "550e8400-e29b-41d4-a716-446655440000"
+        department: "technical"
+        title: "API Design Question"
+        body: "Explain the difference between REST and GraphQL APIs, including their advantages and use cases."
+        created_at: "2025-09-09T08:00:00Z"
+
+    DesignQuestion:
+      summary: Design question
+      value:
+        id: "550e8400-e29b-41d4-a716-446655440001"
+        department: "design"
+        title: "UI/UX Design Principles"
+        body: "Describe the key principles of good user interface design and provide examples."
+        created_at: "2025-09-09T08:01:00Z"
+
+    # Answer Examples
+    TechnicalAnswer:
+      summary: Technical answer
+      value:
+        id: "550e8400-e29b-41d4-a716-446655440000"
+        application_id: "550e8400-e29b-41d4-a716-446655440001"
+        question_id: "550e8400-e29b-41d4-a716-446655440002"
+        body: "REST (Representational State Transfer) is an architectural style that uses standard HTTP methods and status codes, while GraphQL is a query language and runtime that allows clients to request exactly the data they need. REST typically uses multiple endpoints, while GraphQL uses a single endpoint..."
+        created_at: "2025-09-09T10:30:00Z"
+        updated_at: "2025-09-09T10:45:00Z"
+
+security:
+  - bearerAuth: []
