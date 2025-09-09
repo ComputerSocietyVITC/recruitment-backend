@@ -31,7 +31,7 @@ func GenerateJWT(user *models.User) (string, error) {
 		InitJWT()
 	}
 
-	expirationTime := time.Now().Add(GetJWTExpiryDuration())
+	expirationTime := time.Now().Add(GetEnvAsDuration("JWT_EXPIRY_DURATION", 24*time.Hour))
 
 	claims := &JWTClaims{
 		UserID: user.ID.String(),  // ← Convert UUID to string
@@ -85,7 +85,7 @@ func RefreshJWT(tokenString string) (string, error) {
 	}
 
 	// Create new token with extended expiration
-	expirationTime := time.Now().Add(GetJWTExpiryDuration())
+	expirationTime := time.Now().Add(GetEnvAsDuration("JWT_EXPIRY_DURATION", 24*time.Hour))
 	claims.RegisteredClaims.ExpiresAt = jwt.NewNumericDate(expirationTime)
 	claims.RegisteredClaims.IssuedAt = jwt.NewNumericDate(time.Now())
 

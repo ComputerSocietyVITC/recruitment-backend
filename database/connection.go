@@ -3,16 +3,16 @@ package database
 import (
 	"context"
 	"fmt"
-	"log"
 
 	"github.com/ComputerSocietyVITC/recruitment-backend/utils"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
 )
 
 var DB *pgxpool.Pool
 
 // InitDB initializes the database connection
-func InitDB() error {
+func InitDB(logger *zap.Logger) error {
 	// For now, using environment variables. In production, use proper config management
 	dbHost := utils.GetEnvWithDefault("DB_HOST", "localhost")
 	dbPort := utils.GetEnvWithDefault("DB_PORT", "5432")
@@ -49,15 +49,15 @@ func InitDB() error {
 		return fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	log.Println("Successfully connected to database")
+	logger.Info("Successfully connected to database")
 	return nil
 
 }
 
 // CloseDB closes the database connection
-func CloseDB() {
+func CloseDB(logger *zap.Logger) {
 	if DB != nil {
 		DB.Close()
-		log.Println("Database connection closed")
+		logger.Info("Database connection closed")
 	}
 }

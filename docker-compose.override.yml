@@ -1,0 +1,45 @@
+# =============================================================================
+# Docker Compose override for development
+# =============================================================================
+# This file is automatically loaded by docker-compose for development
+# Use: docker-compose up (automatically includes this file)
+# For production: docker-compose -f docker-compose.yml up
+
+version: '3.8'
+
+services:
+  recruitment-backend:
+    build:
+      target: builder  # Stop at builder stage for development
+    environment:
+      - ENV=development
+      - GIN_MODE=debug
+      - DB_HOST=postgres
+    # Override command for development (if using air for live reload)
+    # command: ["air", "-c", ".air.toml"]
+    ports:
+      - "8080:8080"
+
+  postgres:
+    environment:
+      # More permissive settings for development
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5432:5432"
+      
+  # pgAdmin for database management in development
+#  pgadmin:
+#    image: dpage/pgadmin4:latest
+#    environment:
+#      PGADMIN_DEFAULT_EMAIL: admin@recruitment.local
+#      PGADMIN_DEFAULT_PASSWORD: admin123
+#      PGADMIN_CONFIG_SERVER_MODE: 'False'
+#    ports:
+#      - "5050:80"
+#    depends_on:
+#      - postgres
+#    volumes:
+#      - pgadmin_data:/var/lib/pgadmin
+
+volumes:
+  pgadmin_data:

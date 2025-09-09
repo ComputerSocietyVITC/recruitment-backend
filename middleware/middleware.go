@@ -4,6 +4,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -87,11 +88,9 @@ func RoleBasedAuthMiddleware(allowedRoles ...models.UserRole) gin.HandlerFunc {
 		}
 
 		// Check if user role is in allowed roles
-		for _, allowedRole := range allowedRoles {
-			if role == allowedRole {
-				c.Next()
-				return
-			}
+		if slices.Contains(allowedRoles, role) {
+			c.Next()
+			return
 		}
 
 		c.JSON(http.StatusForbidden, gin.H{

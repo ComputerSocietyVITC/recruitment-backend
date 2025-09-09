@@ -3,9 +3,16 @@ package services
 import (
 	"context"
 	"fmt"
+	"time"
+
+	"github.com/ComputerSocietyVITC/recruitment-backend/models"
+	"github.com/ComputerSocietyVITC/recruitment-backend/models/queries"
 	"github.com/ComputerSocietyVITC/recruitment-backend/utils"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var DB *pgxpool.Pool
@@ -51,6 +58,98 @@ func InitDB(logger *zap.Logger) error {
 	logger.Info("Successfully connected to database")
 	return nil
 
+}
+
+// CreateAdminUserIfNotExists creates an admin user if it doesn't exist
+// This function checks for ADMIN_EMAIL and ADMIN_PASSWORD environment variables
+// and creates an admin user only if both are provided and no user with that email exists
+func CreateAdminUserIfNotExists(logger *zap.Logger) error {
+	adminEmail := utils.GetEnvWithDefault("ADMIN_EMAIL", "")
+	adminPassword := utils.GetEnvWithDefault("ADMIN_PASSWORD", "")
+
+	// If either admin email or password is not set, skip admin creation
+	if adminEmail == "" || adminPassword == "" {
+		logger.Info("Admin user creation skipped - ADMIN_EMAIL or ADMIN_PASSWORD not provided")
+		return nil
+	}
+
+	logger.Info("Checking if admin user exists", zap.String("email", adminEmail))
+
+	ctx := context.Background()
+
+	// Check if user with admin email already exists
+	var existingUser models.User
+	err := DB.QueryRow(ctx, queries.GetUserByEmailQuery, adminEmail).Scan(
+		&existingUser.ID, &existingUser.FullName, &existingUser.Email,
+		&existingUser.PhoneNumber, &existingUser.Verified, &existingUser.ResetToken,
+		&existingUser.ResetTokenExpiresAt, &existingUser.HashedPassword,
+		&existingUser.Role, &existingUser.ChickenedOut, &existingUser.CreatedAt,
+		&existingUser.UpdatedAt,
+	)
+
+	if err == nil {
+		// User exists, check if they are already an admin
+		if existingUser.Role == models.RoleAdmin || existingUser.Role == models.RoleSuperAdmin {
+			logger.Info("Admin user already exists with admin privileges", zap.String("email", adminEmail))
+			return nil
+		} else {
+			logger.Info("User exists but is not an admin - skipping admin creation", zap.String("email", adminEmail))
+			return nil
+		}
+	} else if err != pgx.ErrNoRows {
+		// An actual error occurred (not just "no rows found")
+		return fmt.Errorf("failed to check for existing admin user: %w", err)
+	}
+
+	// User doesn't exist, create admin user
+	logger.Info("Creating admin user", zap.String("email", adminEmail))
+
+	// Hash the password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(adminPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("failed to hash admin password: %w", err)
+	}
+
+	// Get admin name from environment or use default
+	adminName := utils.GetEnvWithDefault("ADMIN_NAME", "System Administrator")
+	adminPhone := utils.GetEnvWithDefault("ADMIN_PHONE", "+911000000000")
+
+	adminUser := models.User{
+		ID:                  uuid.New(),
+		FullName:            adminName,
+		Email:               adminEmail,
+		PhoneNumber:         adminPhone,
+		HashedPassword:      string(hashedPassword),
+		Verified:            true, // Admin users are verified by default
+		ChickenedOut:        false,
+		ResetToken:          nil,
+		ResetTokenExpiresAt: nil,
+		Role:                models.RoleAdmin,
+		CreatedAt:           time.Now(),
+		UpdatedAt:           time.Now(),
+	}
+
+	// Create the admin user
+	err = DB.QueryRow(ctx, queries.CreateUserQuery,
+		adminUser.FullName, adminUser.Email, adminUser.PhoneNumber,
+		adminUser.Verified, adminUser.ResetToken, adminUser.ResetTokenExpiresAt,
+		adminUser.HashedPassword, adminUser.Role,
+	).Scan(
+		&adminUser.ID, &adminUser.FullName, &adminUser.Email,
+		&adminUser.PhoneNumber, &adminUser.Verified, &adminUser.Role,
+		&adminUser.ChickenedOut, &adminUser.CreatedAt, &adminUser.UpdatedAt,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to create admin user: %w", err)
+	}
+
+	logger.Info("Admin user created successfully",
+		zap.String("email", adminUser.Email),
+		zap.String("id", adminUser.ID.String()),
+		zap.String("role", string(adminUser.Role)))
+
+	return nil
 }
 
 // CloseDB closes the database connection

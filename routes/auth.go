@@ -84,7 +84,8 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	tokenExpiresAt := time.Now().Add(10 * time.Minute)
+	emailVerifyDuration := utils.GetEnvAsDuration("EMAIL_VERIFICATION_OTP_DURATION", 10*time.Minute)
+	tokenExpiresAt := time.Now().Add(emailVerifyDuration)
 
 	user := models.User{
 		FullName:            req.FullName,
@@ -114,13 +115,12 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	subject := "Thank you for applying to IEEE Computer Society VITC. Please verify your email address"
-	body := "Your OTP is: <strong>" + otp + "</strong>. It is valid for 10 minutes."
+	emailTemplate := utils.GetEmailVerificationTemplate(otp, emailVerifyDuration)
 	m := gomail.NewMessage()
 	m.SetHeader("From", utils.GetEnvWithDefault("EMAIL_FROM", "recruitments@no-reply.ieeecsvitc.com"))
 	m.SetHeader("To", user.Email)
-	m.SetHeader("Subject", subject)
-	m.SetBody("text/html", body)
+	m.SetHeader("Subject", emailTemplate.Subject)
+	m.SetBody("text/html", emailTemplate.Body)
 
 	services.Mailer <- m
 
@@ -234,7 +234,8 @@ func ResendVerificationOTP(c *gin.Context) {
 		return
 	}
 
-	tokenExpiresAt := time.Now().Add(10 * time.Minute)
+	emailVerifyDuration := utils.GetEnvAsDuration("EMAIL_VERIFICATION_OTP_DURATION", 10*time.Minute)
+	tokenExpiresAt := time.Now().Add(emailVerifyDuration)
 
 	// Update user's reset token and expiration time
 	err = services.DB.QueryRow(ctx, queries.UpdateUserResetTokenQuery, user.ID, otp, tokenExpiresAt).Scan(
@@ -251,13 +252,12 @@ func ResendVerificationOTP(c *gin.Context) {
 	}
 
 	// Send verification email
-	subject := "IEEE Computer Society VITC - New Verification Code"
-	body := "Your new OTP is: <strong>" + otp + "</strong>. It is valid for 10 minutes."
+	emailTemplate := utils.GetResendVerificationTemplate(otp, emailVerifyDuration)
 	m := gomail.NewMessage()
 	m.SetHeader("From", utils.GetEnvWithDefault("EMAIL_FROM", "recruitments@no-reply.ieeecsvitc.com"))
 	m.SetHeader("To", user.Email)
-	m.SetHeader("Subject", subject)
-	m.SetBody("text/html", body)
+	m.SetHeader("Subject", emailTemplate.Subject)
+	m.SetBody("text/html", emailTemplate.Body)
 
 	services.Mailer <- m
 
@@ -423,7 +423,8 @@ func ForgotPassword(c *gin.Context) {
 		return
 	}
 
-	tokenExpiresAt := time.Now().Add(30 * time.Minute) // 30 minutes expiry for password reset
+	passwordResetDuration := utils.GetEnvAsDuration("PASSWORD_RESET_OTP_DURATION", 30*time.Minute)
+	tokenExpiresAt := time.Now().Add(passwordResetDuration)
 
 	// Update user's reset token and expiration time
 	err = services.DB.QueryRow(ctx, queries.UpdateUserResetTokenQuery, user.ID, resetToken, tokenExpiresAt).Scan(
@@ -440,14 +441,12 @@ func ForgotPassword(c *gin.Context) {
 	}
 
 	// Send password reset email
-	subject := "IEEE Computer Society VITC - Password Reset Request"
-	body := "You have requested to reset your password. Your reset token is: <strong>" + resetToken + "</strong>. " +
-		"This token is valid for 30 minutes. If you did not request this reset, please ignore this email."
+	emailTemplate := utils.GetPasswordResetTemplate(resetToken, passwordResetDuration)
 	m := gomail.NewMessage()
 	m.SetHeader("From", utils.GetEnvWithDefault("EMAIL_FROM", "recruitments@no-reply.ieeecsvitc.com"))
 	m.SetHeader("To", user.Email)
-	m.SetHeader("Subject", subject)
-	m.SetBody("text/html", body)
+	m.SetHeader("Subject", emailTemplate.Subject)
+	m.SetBody("text/html", emailTemplate.Body)
 
 	services.Mailer <- m
 
@@ -534,13 +533,12 @@ func ResetPassword(c *gin.Context) {
 	}
 
 	// Send confirmation email
-	subject := "IEEE Computer Society VITC - Password Reset Successful"
-	body := "Your password has been successfully reset. If you did not perform this action, please contact support immediately."
+	emailTemplate := utils.GetPasswordResetSuccessTemplate()
 	m := gomail.NewMessage()
 	m.SetHeader("From", utils.GetEnvWithDefault("EMAIL_FROM", "recruitments@no-reply.ieeecsvitc.com"))
 	m.SetHeader("To", user.Email)
-	m.SetHeader("Subject", subject)
-	m.SetBody("text/html", body)
+	m.SetHeader("Subject", emailTemplate.Subject)
+	m.SetBody("text/html", emailTemplate.Body)
 
 	services.Mailer <- m
 

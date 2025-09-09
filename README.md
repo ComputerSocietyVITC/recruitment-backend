@@ -128,42 +128,122 @@ To rollback migrations (if needed):
 psql -h localhost -U postgres -d recruitment_db -f models/migrations/001_initial_down.sql
 ```
 
-## Environment Variables
+## Environment Configuration
 
-Copy the example environment file and update the values:
+This application follows best practices for environment variable management across different deployment scenarios.
 
+### Quick Setup
+
+1. **For Development:**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your development values
+   ```
+
+2. **For Testing:**
+   ```bash
+   cp .env.testing.example .env.testing
+   # The app will automatically load this when ENV=testing
+   ```
+
+3. **For Production:**
+   ```bash
+   cp .env.production.example .env.production
+   # Configure with secure production values
+   # Consider using your platform's secrets management instead
+   ```
+
+4. **For Docker:**
+   ```bash
+   cp .env.docker.example .env.docker
+   # Use with docker-compose
+   ```
+
+### Environment Loading Priority
+
+The application loads environment files in this order (first found wins):
+
+1. `.env.{ENV}.local` (e.g., `.env.development.local`)
+2. `.env.{ENV}` (e.g., `.env.development`)
+3. `.env.local`
+4. `.env`
+5. System environment variables (always available)
+
+### Environment Variables
+
+#### Core Configuration
 ```bash
-cp .env.example .env
-# Then edit .env with your preferred values
-```
+# Environment: development, testing, production
+ENV=development
 
-Required environment variables:
+# Server
+PORT=8080
 
-```bash
-# Database Configuration
+# Database
 DB_HOST=localhost
 DB_PORT=5432
-DB_USER=postgres                    # or recruitment_user if you created a specific user
-DB_PASSWORD=password                # change to your secure password
+DB_USER=postgres
+DB_PASSWORD=your_secure_password    # REQUIRED in production
 DB_NAME=recruitment_db
-DB_MAX_CONNS=10
-DB_MIN_CONNS=2
+DB_MAX_CONNS=10                     # Connection pool size
+DB_MIN_CONNS=2                      # Minimum connections
 
-# Server Configuration
-PORT=8080
-GIN_MODE=debug                      # use 'release' for production
+# Security
+JWT_SECRET=your-32+-char-secret     # REQUIRED - Generate with: make jwt-secret
+JWT_EXPIRY_DURATION=24h             # Examples: 1h, 30m, 7d
 
-# JWT Configuration
-JWT_SECRET=your-secret-key-change-in-production  # Generate with: make jwt-secret
-JWT_EXPIRY_DURATION=24h            # Optional: JWT token expiry duration (default: 24h)
-                                   # Examples: 1h, 30m, 2h30m, 7d, 168h
+# OTP Configuration
+EMAIL_VERIFICATION_OTP_DURATION=10m # Email verification OTP validity (examples: 5m, 10m, 15m)
+PASSWORD_RESET_OTP_DURATION=30m     # Password reset OTP validity (examples: 15m, 30m, 1h)
+
+# Network Security
+TRUSTED_PROXIES=127.0.0.1,10.0.0.0/8    # Comma-separated trusted proxy IPs/ranges
+CORS_ALLOWED_ORIGINS=*                   # Comma-separated allowed origins (* for dev only!)
+
+# Email
+SMTP_HOST=smtp.example.com          # REQUIRED in production
+SMTP_PORT=587
+SMTP_USER=your_smtp_user            # REQUIRED in production
+SMTP_PASSWORD=your_smtp_password    # REQUIRED in production
+EMAIL_FROM=recruitment@yourcompany.com
+
+# Email Templates (customize with your organization's branding)
+# Use {{.OTP}}, {{.TOKEN}}, {{.DURATION}} as placeholders
+EMAIL_VERIFICATION_SUBJECT=Verify your email address
+EMAIL_VERIFICATION_BODY=Your OTP is: <strong>{{.OTP}}</strong>. Valid for {{.DURATION}}.
+EMAIL_RESEND_VERIFICATION_SUBJECT=New verification code
+EMAIL_RESEND_VERIFICATION_BODY=Your new OTP: <strong>{{.OTP}}</strong>. Valid for {{.DURATION}}.
+EMAIL_PASSWORD_RESET_SUBJECT=Password reset request
+EMAIL_PASSWORD_RESET_BODY=Reset token: <strong>{{.TOKEN}}</strong>. Valid for {{.DURATION}}.
+EMAIL_PASSWORD_RESET_SUCCESS_SUBJECT=Password reset successful
+EMAIL_PASSWORD_RESET_SUCCESS_BODY=Your password was successfully reset.
+
+# Business Logic
+ALLOWED_EMAIL_DOMAINS=company.com,university.edu
+MAXIMUM_APPLICATIONS_PER_USER=2
 ```
 
-**Security Notes:**
-- Change the default `DB_PASSWORD` in production
-- Generate a secure JWT secret using `make jwt-secret`
-- Use environment-specific configurations
-- The default super admin password is `password123` - change this immediately in production
+#### Environment-Specific Behavior
+
+- **Development**: Loads `.env` files, relaxed validation, additional logging
+- **Testing**: Uses test database, shorter JWT expiry, debug features
+- **Production**: Strict validation, requires all security variables, no `.env` loading by default
+
+#### Security Notes
+
+🔒 **Critical for Production:**
+- Generate JWT_SECRET with: `make jwt-secret` (minimum 32 characters)
+- Use strong, unique database passwords
+- Configure proper SMTP credentials
+- Review ALLOWED_EMAIL_DOMAINS carefully
+- Set CORS_ALLOWED_ORIGINS to specific domains (never use * in production)
+- Configure TRUSTED_PROXIES for your infrastructure
+- Never commit actual `.env` files to version control
+- Use your deployment platform's secrets management
+
+🚨 **Default Credentials to Change:**
+- Default super admin password: `password123`
+- Default JWT_SECRET in examples
 
 ## Command Line Utilities
 
