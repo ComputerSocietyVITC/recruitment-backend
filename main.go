@@ -116,8 +116,15 @@ func main() {
 		logger.Fatal("Failed to create admin user", zap.Error(err))
 	}
 
-	// Initialize email sender as a goroutine
-	go services.InitMailer(logger)
+	// Initialize email sender as a goroutine with panic recovery
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("Mailer goroutine panicked", zap.Any("panic", r))
+			}
+		}()
+		services.InitMailer(logger)
+	}()
 	defer services.CloseMailer(logger)
 
 	router := gin.New()
