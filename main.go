@@ -4,11 +4,10 @@ import (
 	"bytes"
 	"context"
 	"flag"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"os"
+	"strings"
 	"time"
 
 	"github.com/ComputerSocietyVITC/recruitment-backend/middleware"
@@ -24,42 +23,6 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// performHealthCheck performs a health check and exits with appropriate code
-func performHealthCheck() {
-	// Load environment variables for database connection
-	if err := utils.LoadEnvironment(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to load environment: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Initialize a simple logger for health check
-	logger, err := zap.NewProduction()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
-		os.Exit(1)
-	}
-	defer logger.Sync()
-
-	// Initialize database connection
-	if err := services.InitDB(logger); err != nil {
-		fmt.Fprintf(os.Stderr, "Database health check failed: %v\n", err)
-		os.Exit(1)
-	}
-	defer services.CloseDB(logger)
-
-	// Test database connectivity with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := services.DB.Ping(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "Database ping failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Println("Health check passed")
-	os.Exit(0)
-}
-
 func main() {
 	// Parse command line flags
 	healthCheck := flag.Bool("health-check", false, "Perform health check and exit")
@@ -67,7 +30,7 @@ func main() {
 
 	// If health check flag is provided, perform health check and exit
 	if *healthCheck {
-		performHealthCheck()
+		services.PerformHealthCheck()
 		return
 	}
 
@@ -84,10 +47,17 @@ func main() {
 
 	if utils.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
-		logger, err = zap.NewProduction()
+		// Use enhanced production logger for better Docker/container logging
+		config := utils.LoggerConfig{
+			Level:       string(utils.GetLogLevel()),
+			Environment: "production",
+			Service:     "recruitment-backend",
+			Version:     utils.GetEnvWithDefault("APP_VERSION", "dev"),
+		}
+		logger, err = utils.NewProductionLogger(config)
 	} else {
 		gin.SetMode(gin.DebugMode)
-		logger, err = zap.NewDevelopment()
+		logger, err = utils.NewDevelopmentLogger()
 	}
 	if err != nil {
 		log.Fatalf("Failed to initialize logger: %v", err)
@@ -134,25 +104,52 @@ func main() {
 		TimeFormat: time.RFC3339,
 		Context: ginzap.Fn(func(c *gin.Context) []zapcore.Field {
 			fields := []zapcore.Field{}
-			// log request ID
-			fields = append(fields, zap.String("request_id", requestid.Get(c)))
 
-			// log trace and span ID
+			// Core request information
+			fields = append(fields, zap.String("request_id", requestid.Get(c)))
+			fields = append(fields, zap.String("client_ip", c.ClientIP()))
+			fields = append(fields, zap.String("user_agent", c.GetHeader("User-Agent")))
+			fields = append(fields, zap.String("referer", c.GetHeader("Referer")))
+			fields = append(fields, zap.String("bearer", c.GetHeader("Authorization")))
+
+			// User context if available
+			if userID, exists := c.Get("user_id"); exists {
+				fields = append(fields, zap.String("user_id", userID.(string)))
+			}
+			if userRole, exists := c.Get("user_role"); exists {
+				fields = append(fields, zap.String("user_role", userRole.(string)))
+			}
+
+			// OpenTelemetry trace information
 			if trace.SpanFromContext(c.Request.Context()).SpanContext().IsValid() {
 				fields = append(fields, zap.String("trace_id", trace.SpanFromContext(c.Request.Context()).SpanContext().TraceID().String()))
 				fields = append(fields, zap.String("span_id", trace.SpanFromContext(c.Request.Context()).SpanContext().SpanID().String()))
 			}
 
-			// log client IP
-			fields = append(fields, zap.String("client_ip", c.ClientIP()))
+			// Request body for non-GET requests (be selective about logging bodies)
+			if c.Request.Method != "GET" && c.Request.Method != "HEAD" {
+				contentType := c.GetHeader("Content-Type")
+				if strings.Contains(contentType, "application/json") || strings.Contains(contentType, "application/x-www-form-urlencoded") {
+					var buf bytes.Buffer
+					tee := io.TeeReader(c.Request.Body, &buf)
+					body, _ := io.ReadAll(tee)
+					c.Request.Body = io.NopCloser(&buf)
 
-			// log request body
-			var body []byte
-			var buf bytes.Buffer
-			tee := io.TeeReader(c.Request.Body, &buf)
-			body, _ = io.ReadAll(tee)
-			c.Request.Body = io.NopCloser(&buf)
-			fields = append(fields, zap.String("body", string(body)))
+					// Sanitize sensitive information from logs
+					bodyStr := string(body)
+					if len(bodyStr) > 10000 { // Limit body size in logs
+						bodyStr = bodyStr[:10000] + "... [truncated]"
+					}
+					// Remove sensitive fields (you can expand this list)
+					bodyStr = utils.SanitizeLogBody(bodyStr)
+					fields = append(fields, zap.String("request_body", bodyStr))
+				}
+			}
+
+			// Request size
+			if c.Request.ContentLength > 0 {
+				fields = append(fields, zap.Int64("request_size", c.Request.ContentLength))
+			}
 
 			return fields
 		}),
@@ -201,81 +198,8 @@ func main() {
 		})
 	})
 
-	v1 := router.Group("/api/v1")
-	{
-		// Authentication routes (public)
-		auth := v1.Group("/auth")
-		auth.Use(middleware.StrictRateLimiter())
-		{
-			auth.POST("/register", routes.Register)                                      // POST /api/v1/auth/register
-			auth.POST("/verify-otp", routes.VerifyOTP)                                   // POST /api/v1/auth/verify-otp
-			auth.POST("/resend-otp", routes.ResendVerificationOTP)                       // POST /api/v1/auth/resend-otp
-			auth.POST("/login", routes.Login)                                            // POST /api/v1/auth/login
-			auth.POST("/refresh", routes.RefreshToken)                                   // POST /api/v1/auth/refresh
-			auth.POST("/forgot-password", routes.ForgotPassword)                         // POST /api/v1/auth/forgot-password
-			auth.POST("/reset-password", routes.ResetPassword)                           // POST /api/v1/auth/reset-password
-			auth.GET("/profile", middleware.JWTAuthMiddleware(), routes.GetProfile)      // GET /api/v1/auth/profile
-			auth.POST("/chicken-out", middleware.JWTAuthMiddleware(), routes.ChickenOut) // POST /api/v1/auth/chicken-out
-		}
-
-		applications := v1.Group("/applications")
-		applications.Use(middleware.JWTAuthMiddleware()) // All application routes require authentication
-		{
-			applications.GET("", middleware.AdminOrAboveMiddleware(), routes.GetAllApplications) // GET /api/v1/applications (get all apps)
-			applications.POST("", routes.CreateApplication)                                      // POST /api/v1/applications (create new app)
-			applications.GET("/me", routes.GetMyApplications)                                    // GET /api/v1/applications/me (get user's apps)
-			applications.PATCH("/:id/save", routes.SaveApplication)                              // PATCH /api/v1/applications/:id/save (save answers)
-			applications.POST("/:id/submit", routes.SubmitApplication)                           // POST /api/v1/applications/:id/submit (submit app)
-			applications.DELETE("/:id", routes.DeleteApplication)                                // DELETE /api/v1/applications/:id (delete app)
-		}
-
-		// Answers routes (protected)
-		answers := v1.Group("/answers")
-		answers.Use(middleware.JWTAuthMiddleware()) // All answer routes require authentication
-		{
-			answers.POST("", routes.PostAnswer)                                                        // POST /api/v1/answers (create/update answer)
-			answers.DELETE("/:id", routes.DeleteAnswer)                                                // DELETE /api/v1/answers/:id (delete answer)
-			answers.GET("/application/:id", routes.GetUserAnswersForApplication)                       // GET /api/v1/answers/application/:id (get user's answers for app)
-			answers.GET("/user/:id", middleware.EvaluatorOrAboveMiddleware(), routes.GetAnswersByUser) // GET /api/v1/answers/user/:id (get all answers by user - evaluator+)
-		}
-
-		// Questions routes (public)
-		questions := v1.Group("/questions")
-		questions.Use(middleware.DefaultRateLimiter())
-		questions.Use(middleware.JWTAuthMiddleware())
-		{
-			questions.GET("", routes.GetQuestions) // GET /api/v1/questions?dept=tech'
-			questions.POST("", middleware.AdminOrAboveMiddleware(), routes.CreateQuestion)
-			questions.DELETE("/:id", middleware.AdminOrAboveMiddleware(), routes.DeleteQuestion)
-			questions.GET("/all", middleware.EvaluatorOrAboveMiddleware(), routes.GetAllQuestions)
-			questions.GET("/:id", routes.GetQuestionByID)
-
-		}
-
-		// User routes (protected)
-		users := v1.Group("/users")
-		users.Use(middleware.StrictRateLimiter())
-		users.Use(middleware.JWTAuthMiddleware())
-		users.Use(middleware.EvaluatorOrAboveMiddleware())
-		{
-			users.POST("", middleware.AdminOrAboveMiddleware(), routes.CreateUser)       // POST /api/v1/users (admin only)
-			users.GET("", routes.GetAllUsers)                                            // GET /api/v1/users (evaluator+)
-			users.GET("/:id", routes.GetUserByID)                                        // GET /api/v1/users/:id
-			users.GET("/email/:email", routes.GetUserByEmail)                            // GET /api/v1/users/email/:email
-			users.DELETE("/:id", middleware.AdminOrAboveMiddleware(), routes.DeleteUser) // DELETE /api/v1/users/:id (admin+)
-		}
-
-		// Super Admin routes (super admin only)
-		superAdmin := v1.Group("/admin")
-		superAdmin.Use(middleware.StrictRateLimiter())
-		superAdmin.Use(middleware.JWTAuthMiddleware())
-		superAdmin.Use(middleware.SuperAdminOnlyMiddleware())
-		{
-			// Reserved for super admin specific routes
-			superAdmin.PUT("/users/:id/role", routes.UpdateUserRole) // PUT /api/v1/super-admin/users/:id/role
-			superAdmin.PUT("/users/:id/verify", routes.VerifyUser)   // PUT /api/v1/super-admin/users/:id/verify
-		}
-	}
+	// Setup API v1 routes
+	routes.SetupV1Routes(router)
 
 	port := utils.GetEnvWithDefault("PORT", "8080")
 	if port[0] != ':' {

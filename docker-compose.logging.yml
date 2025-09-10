@@ -1,0 +1,177 @@
+# =============================================================================
+# Advanced Docker Compose with Log Aggregation
+# =============================================================================
+# This configuration includes log aggregation services for better log management
+# Use this for production environments where you need centralized logging
+# =============================================================================
+
+services:
+  recruitment-backend:
+    image: recruitment-backend
+    ports:
+      - "12000:8080"
+    environment:
+      - ENV=production
+      - PORT=8080
+      - LOG_LEVEL=info
+      - APP_VERSION=v1.0.0
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=recruitment_user
+      - DB_PASSWORD=recruitment_password
+      - DB_NAME=recruitment_db
+      - DB_MAX_CONNS=25
+      - DB_MIN_CONNS=5
+      - JWT_SECRET=super_long_secret_key
+      - JWT_EXPIRY_DURATION=24h
+      - EMAIL_VERIFICATION_OTP_DURATION=10m
+      - PASSWORD_RESET_OTP_DURATION=30m
+      - ADMIN_EMAIL=admin@comp.socks
+      - ADMIN_PASSWORD=Admin@123
+      - ADMIN_PHONE=+911000000000
+      - TRUSTED_PROXIES=172.16.0.0/12
+      - CORS_ALLOWED_ORIGINS=https://join.ieeecsvitc.com
+      - SMTP_HOST=smtp.example.org
+      - SMTP_PORT=587
+      - SMTP_USER=johndoe
+      - SMTP_PASSWORD=emailpassword
+      - EMAIL_FROM=recruitment@no-reply.ieeecsvitc.com
+    depends_on:
+      fluentd:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    links:
+      - fluentd
+    logging:
+      driver: "fluentd"
+      options:
+        fluentd-address: localhost:24224
+        tag: recruitment.backend
+    labels:
+      - "service=recruitment-backend"
+      - "environment=production"
+      - "version=v1.0.0"
+    networks:
+      - app-network
+      - log-network
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: recruitment_db
+      POSTGRES_USER: recruitment_user
+      POSTGRES_PASSWORD: recruitment_password
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-recruitment_user} -d ${DB_NAME:-recruitment_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "fluentd"
+      options:
+        fluentd-address: localhost:24224
+        tag: recruitment.postgres
+    depends_on:
+      fluentd:
+        condition: service_started
+    links:
+      - fluentd
+    labels:
+      - "service=postgres"
+      - "environment=production"
+    networks:
+      - app-network
+      - log-network
+
+  # Fluentd for log aggregation
+  fluentd:
+    image: ghcr.io/libkush/fluentd-elasticsearch:main
+    ports:
+      - "24224:24224"
+      - "24224:24224/udp"
+    volumes:
+      - ./fluentd/conf:/fluentd/etc
+    environment:
+      FLUENTD_CONF: fluentd.conf
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - log-network
+
+  # Elasticsearch for log storage and indexing
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "12200:9200"
+    networks:
+      - log-network
+    healthcheck:
+      # Check whether service is ready
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 10s
+      retries: 5
+      timeout: 5s
+
+  # Kibana for log visualization
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "12601:5601"
+    depends_on:
+      - elasticsearch
+    networks:
+      - log-network
+
+  # Optional: Grafana Loki for log aggregation (alternative to ELK)
+  loki:
+    image: grafana/loki:2.9.0
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - loki_data:/loki
+    networks:
+      - log-network
+#
+#  # Optional: Grafana for log visualization with Loki
+  grafana:
+    image: grafana/grafana:10.2.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - loki
+    networks:
+      - log-network
+
+networks:
+  app-network:
+    driver: bridge
+  log-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  elasticsearch_data:
+  loki_data:
+  grafana_data:

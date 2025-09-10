@@ -15,6 +15,8 @@ services:
     environment:
       - ENV=production
       - PORT=8080
+      - LOG_LEVEL=info
+      - APP_VERSION=v1.0.0
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_USER=recruitment_user
@@ -40,6 +42,18 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+    # Logging configuration for container environments
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+        compress: "true"
+        labels: "service,environment,version"
+    labels:
+      - "service=recruitment-backend"
+      - "environment=production"
+      - "version=v1.0.0"
 
   postgres:
     image: postgres:17-alpine
@@ -58,6 +72,17 @@ services:
       retries: 5
     security_opt:
       - no-new-privileges:true
+    # Logging configuration for database
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+        compress: "true"
+        labels: "service,environment"
+    labels:
+      - "service=postgres"
+      - "environment=production"
     # Don't expose port in production unless needed for external access
     # ports:
     #   - "5432:5432"
