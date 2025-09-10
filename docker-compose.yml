@@ -1,17 +1,17 @@
 # =============================================================================
-# Docker Compose for recruitment backend
+# Production Docker Compose for recruitment backend
 # =============================================================================
-version: '3.8'
+# Use this file for production deployments
+# Command: docker-compose up -d
+#
+# Ensure environment variables are set securely and not hardcoded in production
+# =============================================================================
 
 services:
-  # Main application service
   recruitment-backend:
-#    build:
-#      context: .
-#      dockerfile: Dockerfile
-    image: recruitment-backend:latest
+    image: ghcr.io/computersocietyvitc/recruitment-backend:master
     ports:
-      - "8080:8080"
+      - "9999:8080"
     environment:
       - ENV=production
       - PORT=8080
@@ -22,43 +22,42 @@ services:
       - DB_NAME=recruitment_db
       - DB_MAX_CONNS=25
       - DB_MIN_CONNS=5
-      # Add other environment variables as needed
-      # These should be overridden in production with actual values
-      - JWT_SECRET='Kz+3942TSYuNybFQAx2ieJUJOWksberr5g9i+TFjry4='
+      - JWT_SECRET=bzRPnIXW+fX6niA0mK9RKV6nMRVNVtcCMl1Atym9NEI=
       - JWT_EXPIRY_DURATION=24h
       - EMAIL_VERIFICATION_OTP_DURATION=10m
       - PASSWORD_RESET_OTP_DURATION=30m
       - ADMIN_EMAIL=admin@comp.socks
-      - ADMIN_PASSWORD=dCeKQFq8TdFm
+      - ADMIN_PASSWORD=Admin@12345
       - ADMIN_PHONE=+911000000000
-      - TRUSTED_PROXIES=127.0.0.1
-      - CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001
+      - TRUSTED_PROXIES=172.16.0.0/12
+      - CORS_ALLOWED_ORIGINS=https://join.ieeecsvitc.com
+      - SMTP_HOST=smtp.example.com
+      - SMTP_PORT=587
+      - SMTP_USER=johndoe
+      - SMTP_PASSWORD=PHtE6r0EQby5
+      - EMAIL_FROM=recruitment@no-reply.ieeecsvitc.com
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
 
-  # PostgreSQL database service
   postgres:
-    image: postgres:17
+    image: postgres:17-alpine
     environment:
       POSTGRES_DB: recruitment_db
       POSTGRES_USER: recruitment_user
       POSTGRES_PASSWORD: recruitment_password
-    # ports:
-    #   - "5432:5432"
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./models/migrations:/docker-entrypoint-initdb.d/migrations:ro
+      - /var/data/recruitment_prod/db:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U recruitment_user -d recruitment_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-recruitment_user} -d ${DB_NAME:-recruitment_db}"]
       interval: 10s
       timeout: 5s
       retries: 5
-
-volumes:
-  postgres_data:
-
-# Development override file: docker-compose.override.yml
-# Create this file for development-specific configurations
+    security_opt:
+      - no-new-privileges:true
+    # Don't expose port in production unless needed for external access
+    # ports:
+    #   - "5432:5432"
