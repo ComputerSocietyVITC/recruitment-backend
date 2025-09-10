@@ -19,6 +19,12 @@ WHERE user_id = $1
 ORDER BY created_at DESC
 `
 
+const GetApplicationByIDQuery = `
+SELECT id, user_id, department, submitted, chickened_out, created_at, updated_at
+FROM applications 
+WHERE id = $1
+`
+
 const SubmitApplicationQuery = `
 UPDATE applications 
 SET submitted = true, updated_at = $2

@@ -123,6 +123,7 @@ func main() {
 		{
 			applications.POST("", routes.CreateApplication)                                         // POST /api/v1/applications (create new app)
 			applications.GET("/me", routes.GetMyApplications)                                       // GET /api/v1/applications/me (get user's apps)
+			applications.GET("/:id", routes.GetApplicationByID)                                     // GET /api/v1/applications/:id (get app by ID)
 			applications.PATCH("/:id/save", middleware.StrictRateLimiter(), routes.SaveApplication) // PATCH /api/v1/applications/:id/save (save answers)
 			applications.POST("/:id/submit", routes.SubmitApplication)                              // POST /api/v1/applications/:id/submit (submit app)
 			applications.DELETE("/:id", routes.DeleteApplication)                                   // DELETE /api/v1/applications/:id (delete app)

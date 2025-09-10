@@ -213,6 +213,57 @@ func GetMyApplications(c *gin.Context) {
 	})
 }
 
+// GetApplicationByID handles GET /applications/:id - fetches a specific application by ID
+func GetApplicationByID(c *gin.Context) {
+	// Get application ID from URL
+	applicationIDStr := c.Param("id")
+	applicationID, err := uuid.Parse(applicationIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid application ID"})
+		return
+	}
+
+	// Get user ID from JWT token
+	userIDInterface, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	userID, ok := userIDInterface.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID format"})
+		return
+	}
+
+	ctx := context.Background()
+
+	var application models.Application
+	err = services.DB.QueryRow(ctx, queries.GetApplicationByIDQuery, applicationID).Scan(
+		&application.ID, &application.UserID, &application.Department, &application.Submitted,
+		&application.ChickenedOut, &application.CreatedAt, &application.UpdatedAt,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":   "Application not found",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Verify user owns this application
+	if application.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":     "Application fetched successfully",
+		"application": application,
+	})
+}
+
 // SaveApplication handles PATCH /applications/:id/save - saves application answers
 func SaveApplication(c *gin.Context) {
 
