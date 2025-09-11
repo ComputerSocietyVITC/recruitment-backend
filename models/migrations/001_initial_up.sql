@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS users (
     reset_token_expires_at TIMESTAMP WITH TIME ZONE,
     role user_role NOT NULL DEFAULT 'applicant',
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    chickened_out BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE OR REPLACE FUNCTION update_updated_at_column()

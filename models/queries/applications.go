@@ -43,6 +43,10 @@ SELECT COUNT(*) FROM applications WHERE user_id = $1
 
 const UpdateApplicationChickenedOutStatusQuery = `
 UPDATE applications
-SET chickened_out = $3, updated_at = NOW()
-WHERE id = $1 AND user_id = $2
+SET chickened_out = true, updated_at = NOW()
+WHERE id = $1 AND user_id = $2;
+
+UPDATE users 
+SET chickened_out = true 
+WHERE id = $2
 `
