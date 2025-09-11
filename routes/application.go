@@ -498,6 +498,12 @@ func ChickenOut(c *gin.Context) {
 	}
 
 	// Update the chickened_out status
+	_, err = services.DB.Exec(ctx, queries.UpdateUserChickenedOutStatusQuery, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Couldn't update chickened out status"})
+		return
+	}
+
 	_, err = services.DB.Exec(ctx, queries.UpdateApplicationChickenedOutStatusQuery, applicationID, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Couldn't update chickened out status"})
