@@ -80,7 +80,7 @@ func CreateAdminUserIfNotExists(logger *zap.Logger) error {
 	// Check if user with admin email already exists
 	var existingUser models.User
 	err := DB.QueryRow(ctx, queries.GetUserByEmailQuery, adminEmail).Scan(
-		&existingUser.ID, &existingUser.FullName, &existingUser.Email,
+		&existingUser.ID, &existingUser.FullName, &existingUser.Email, &existingUser.RegNum,
 		&existingUser.PhoneNumber, &existingUser.Verified, &existingUser.ResetToken,
 		&existingUser.ResetTokenExpiresAt, &existingUser.HashedPassword,
 		&existingUser.Role, &existingUser.ChickenedOut, &existingUser.CreatedAt,
@@ -118,6 +118,7 @@ func CreateAdminUserIfNotExists(logger *zap.Logger) error {
 		ID:                  uuid.New(),
 		FullName:            adminName,
 		Email:               adminEmail,
+		RegNum:              "ADMIN001",
 		PhoneNumber:         adminPhone,
 		HashedPassword:      string(hashedPassword),
 		Verified:            true, // Admin users are verified by default
@@ -131,11 +132,11 @@ func CreateAdminUserIfNotExists(logger *zap.Logger) error {
 
 	// Create the admin user
 	err = DB.QueryRow(ctx, queries.CreateUserQuery,
-		adminUser.FullName, adminUser.Email, adminUser.PhoneNumber,
+		adminUser.FullName, adminUser.Email, adminUser.RegNum, adminUser.PhoneNumber,
 		adminUser.Verified, adminUser.ResetToken, adminUser.ResetTokenExpiresAt,
 		adminUser.HashedPassword, adminUser.Role,
 	).Scan(
-		&adminUser.ID, &adminUser.FullName, &adminUser.Email,
+		&adminUser.ID, &adminUser.FullName, &adminUser.Email, &adminUser.RegNum,
 		&adminUser.PhoneNumber, &adminUser.Verified, &adminUser.Role,
 		&adminUser.ChickenedOut, &adminUser.CreatedAt, &adminUser.UpdatedAt,
 	)

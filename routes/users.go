@@ -65,6 +65,7 @@ func CreateUser(c *gin.Context) {
 	user := models.User{
 		FullName:            req.FullName,
 		Email:               req.Email,
+		RegNum:              req.RegNum,
 		PhoneNumber:         req.PhoneNumber,
 		Verified:            false,
 		ResetToken:          nil,
@@ -75,11 +76,11 @@ func CreateUser(c *gin.Context) {
 
 	ctx := context.Background()
 	err = services.DB.QueryRow(ctx, queries.CreateUserQuery,
-		user.FullName, user.Email, user.PhoneNumber, user.Verified,
+		user.FullName, user.Email, user.RegNum, user.PhoneNumber, user.Verified,
 		user.ResetToken, user.ResetTokenExpiresAt,
 		user.HashedPassword, user.Role,
 	).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified,
+		&user.ID, &user.FullName, &user.Email, &user.RegNum, &user.PhoneNumber, &user.Verified,
 		&user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
 	)
 
@@ -123,7 +124,7 @@ func GetAllUsers(c *gin.Context) {
 	for rows.Next() {
 		var user models.User
 		err := rows.Scan(
-			&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified,
+			&user.ID, &user.FullName, &user.Email, &user.RegNum, &user.PhoneNumber, &user.Verified,
 			&user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
 		)
 		if err != nil {
@@ -165,7 +166,7 @@ func GetUserByID(c *gin.Context) {
 	ctx := context.Background()
 	var user models.User
 	err = services.DB.QueryRow(ctx, queries.GetUserByIDQuery, userID).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified,
+		&user.ID, &user.FullName, &user.Email, &user.RegNum, &user.PhoneNumber, &user.Verified,
 		&user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
 	)
 
@@ -205,7 +206,7 @@ func DeleteUser(c *gin.Context) {
 	ctx := context.Background()
 	var existingUser models.User
 	err = services.DB.QueryRow(ctx, queries.GetUserByIDQuery, userID).Scan(
-		&existingUser.ID, &existingUser.FullName, &existingUser.Email, &existingUser.PhoneNumber,
+		&existingUser.ID, &existingUser.FullName, &existingUser.Email, &existingUser.RegNum, &existingUser.PhoneNumber,
 		&existingUser.Verified, &existingUser.Role, &existingUser.ChickenedOut, &existingUser.CreatedAt, &existingUser.UpdatedAt,
 	)
 
@@ -296,7 +297,7 @@ func GetUserByEmail(c *gin.Context) {
 	ctx := context.Background()
 	var user models.User
 	err := services.DB.QueryRow(ctx, queries.GetUserByEmailPublicQuery, email).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber, &user.Verified,
+		&user.ID, &user.FullName, &user.Email, &user.RegNum, &user.PhoneNumber, &user.Verified,
 		&user.Role, &user.ChickenedOut, &user.CreatedAt, &user.UpdatedAt,
 	)
 

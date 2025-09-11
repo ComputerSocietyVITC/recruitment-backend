@@ -11,9 +11,9 @@ type Department string
 
 const (
 	Technical   Department = "technical"
-	Marketing   Department = "marketing"
 	Management  Department = "management"
 	SocialMedia Department = "social_media"
+	Design      Department = "design"
 )
 
 type Question struct {

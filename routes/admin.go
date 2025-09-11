@@ -54,8 +54,8 @@ func UpdateUserRole(c *gin.Context) {
 	var user models.User
 
 	err = services.DB.QueryRow(ctx, queries.UpdateUserRoleQuery, userID, req.Role).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber,
-		&user.Role, &user.CreatedAt, &user.UpdatedAt,
+		&user.ID, &user.FullName, &user.Email, &user.RegNum, &user.PhoneNumber,
+		&user.Verified, &user.Role, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err != nil {
@@ -103,7 +103,7 @@ func VerifyUser(c *gin.Context) {
 	var user models.User
 
 	err = services.DB.QueryRow(ctx, queries.UpdateUserVerificationStatusQuery, userID, req.Verified).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.PhoneNumber,
+		&user.ID, &user.FullName, &user.Email, &user.RegNum, &user.PhoneNumber,
 		&user.Verified, &user.Role, &user.CreatedAt, &user.UpdatedAt,
 	)
 
