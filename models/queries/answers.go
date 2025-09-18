@@ -54,3 +54,14 @@ SELECT app.department as app_department, q.department as question_department
 FROM applications app, questions q
 WHERE app.id = $1 AND q.id = $2
 `
+
+// GetAnswersWithQuestionsForApplicationQuery gets answers with question details for an application
+const GetAnswersWithQuestionsForApplicationQuery = `
+SELECT 
+    a.id, a.application_id, a.user_id, a.question_id, a.body, a.created_at, a.updated_at,
+    q.title as question_title, q.body as question_body, q.department
+FROM answers a
+INNER JOIN questions q ON a.question_id = q.id
+WHERE a.application_id = $1
+ORDER BY a.created_at ASC
+`

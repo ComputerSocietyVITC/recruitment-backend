@@ -13,7 +13,8 @@ import (
 
 // UpdateUserRoleRequest represents the request body for updating user role
 type UpdateUserRoleRequest struct {
-	Role models.UserRole `json:"role" binding:"required"`
+	Role       models.UserRole `json:"role" binding:"required"`
+	Department *string         `json:"department,omitempty"` // Required for reviewer role
 }
 
 // VerifyUserRequest represents the request body for verifying a user
@@ -41,10 +42,26 @@ func UpdateUserRole(c *gin.Context) {
 		return
 	}
 
-	// Validate role - only applicant role is supported
-	if req.Role != models.RoleApplicant {
+	// Validate role and department requirements
+	if req.Role != models.RoleApplicant && req.Role != models.RoleReviewer {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid role specified - only 'applicant' role is supported",
+			"error": "Invalid role specified - only 'applicant' and 'reviewer' roles are supported",
+		})
+		return
+	}
+
+	// If role is reviewer, department is required
+	if req.Role == models.RoleReviewer && (req.Department == nil || *req.Department == "") {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Department is required for reviewer role",
+		})
+		return
+	}
+
+	// If role is applicant, department should be null
+	if req.Role == models.RoleApplicant && req.Department != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Department should not be specified for applicant role",
 		})
 		return
 	}
@@ -52,10 +69,19 @@ func UpdateUserRole(c *gin.Context) {
 	ctx := context.Background()
 	var user models.User
 
-	err = services.DB.QueryRow(ctx, queries.UpdateUserRoleQuery, userID, req.Role).Scan(
-		&user.ID, &user.FullName, &user.Email, &user.RegNum,
-		&user.Role, &user.CreatedAt, &user.UpdatedAt,
-	)
+	if req.Role == models.RoleReviewer {
+		// Use query that updates both role and department
+		err = services.DB.QueryRow(ctx, queries.UpdateUserRoleAndDepartmentQuery, userID, req.Role, req.Department).Scan(
+			&user.ID, &user.FullName, &user.Email, &user.RegNum,
+			&user.Role, &user.Department, &user.CreatedAt, &user.UpdatedAt,
+		)
+	} else {
+		// Use query that only updates role (sets department to NULL)
+		err = services.DB.QueryRow(ctx, queries.UpdateUserRoleAndDepartmentQuery, userID, req.Role, nil).Scan(
+			&user.ID, &user.FullName, &user.Email, &user.RegNum,
+			&user.Role, &user.Department, &user.CreatedAt, &user.UpdatedAt,
+		)
+	}
 
 	if err != nil {
 		if err.Error() == "no rows in result set" {

@@ -15,6 +15,14 @@ type Answer struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
+// AnswerWithQuestion represents an answer with its corresponding question details
+type AnswerWithQuestion struct {
+	Answer
+	QuestionTitle string `json:"question_title" db:"question_title"`
+	QuestionBody  string `json:"question_body" db:"question_body"`
+	Department    string `json:"department" db:"department"`
+}
+
 type SaveApplicationRequest struct {
 	Answers []AnswerRequest `json:"answers" binding:"required"`
 }

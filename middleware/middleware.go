@@ -234,3 +234,43 @@ func CustomRateLimiter(requestsPerPeriod int64, period time.Duration, trustedPro
 
 	return RateLimiterMiddleware(config)
 }
+
+// ReviewerAuthMiddleware ensures the user is a reviewer and fetches their department
+func ReviewerAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// First ensure user is authenticated
+		userRole, exists := c.Get("userRole")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "User role not found in context",
+			})
+			c.Abort()
+			return
+		}
+
+		role, ok := userRole.(models.UserRole)
+		if !ok || role != models.RoleReviewer {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "Access denied: Reviewer role required",
+			})
+			c.Abort()
+			return
+		}
+
+		// Get user ID from context
+		userID, exists := c.Get("userID")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "User ID not found in context",
+			})
+			c.Abort()
+			return
+		}
+
+		// Fetch user's department from database
+		// Note: We'll need to import the services package for DB access
+		// For now, we'll just pass the user ID and let the route handlers fetch the department
+		c.Set("reviewerID", userID)
+		c.Next()
+	}
+}

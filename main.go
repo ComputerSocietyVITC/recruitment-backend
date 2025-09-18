@@ -147,6 +147,18 @@ func main() {
 			questions.GET("/application/:id", routes.GetQuestionByApplicationID)
 			questions.GET("/:id", routes.GetQuestionByID)
 		}
+
+		// Reviewer routes (protected, reviewer role required)
+		reviewer := v1.Group("/reviewer")
+		reviewer.Use(middleware.DefaultRateLimiter())
+		reviewer.Use(middleware.JWTAuthMiddleware())
+		reviewer.Use(middleware.ReviewerAuthMiddleware())
+		{
+			reviewer.GET("/applications", routes.GetApplicationsForReview)  // GET /api/v1/reviewer/applications (list applications for review)
+			reviewer.GET("/applications/:id", routes.GetApplicationDetails) // GET /api/v1/reviewer/applications/:id (get application details)
+			reviewer.POST("/reviews", routes.CreateOrUpdateReview)          // POST /api/v1/reviewer/reviews (create/update review)
+			reviewer.GET("/stats", routes.GetReviewStats)                   // GET /api/v1/reviewer/stats (get review statistics)
+		}
 	}
 
 	port := utils.GetEnvWithDefault("PORT", "8080")

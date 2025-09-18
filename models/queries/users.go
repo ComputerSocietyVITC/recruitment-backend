@@ -46,6 +46,14 @@ const (
 		RETURNING id, full_name, email, reg_num, role, created_at, updated_at
 	`
 
+	// UpdateUserRoleAndDepartmentQuery updates a user's role and department
+	UpdateUserRoleAndDepartmentQuery = `
+		UPDATE users 
+		SET role = $2, department = $3, updated_at = NOW()
+		WHERE id = $1
+		RETURNING id, full_name, email, reg_num, role, department, created_at, updated_at
+	`
+
 	// UpdateUserVerificationStatusQuery updates a user's email verification status
 	UpdateUserVerificationStatusQuery = `
 		UPDATE users
