@@ -8,7 +8,7 @@ ORDER BY created_at DESC
 
 const CreateApplicationQuery = `
 INSERT INTO applications (id, user_id, department, submitted, chickened_out, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+VALUES ($1, $2, $3::department, $4, $5, $6, $7)
 RETURNING id, user_id, department, submitted, chickened_out, created_at, updated_at
 `
 

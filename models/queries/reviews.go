@@ -5,7 +5,7 @@ package queries
 // CreateReviewQuery creates or updates a review (upsert)
 const CreateReviewQuery = `
 INSERT INTO reviews (application_id, reviewer_id, department, shortlisted, comments)
-VALUES ($1, $2, $3, $4, $5)
+VALUES ($1, $2, $3::department, $4, $5)
 ON CONFLICT (application_id, reviewer_id) 
 DO UPDATE SET 
     shortlisted = EXCLUDED.shortlisted,
@@ -36,7 +36,7 @@ FROM applications a
 JOIN users u ON a.user_id = u.id
 LEFT JOIN reviews r ON a.id = r.application_id
 LEFT JOIN users ru ON r.reviewer_id = ru.id
-WHERE a.department = $1 AND a.submitted = true AND a.chickened_out = false
+WHERE a.department = $1::department AND a.submitted = true AND a.chickened_out = false
 ORDER BY a.created_at DESC`
 
 // GetApplicationsForReviewerWithPaginationQuery gets applications with pagination
@@ -50,7 +50,7 @@ FROM applications a
 JOIN users u ON a.user_id = u.id
 LEFT JOIN reviews r ON a.id = r.application_id
 LEFT JOIN users ru ON r.reviewer_id = ru.id
-WHERE a.department = $1 AND a.submitted = true AND a.chickened_out = false
+WHERE a.department = $1::department AND a.submitted = true AND a.chickened_out = false
 ORDER BY a.created_at DESC
 LIMIT $2 OFFSET $3`
 
@@ -58,7 +58,7 @@ LIMIT $2 OFFSET $3`
 const CountApplicationsForReviewerQuery = `
 SELECT COUNT(*)
 FROM applications a
-WHERE a.department = $1 AND a.submitted = true AND a.chickened_out = false`
+WHERE a.department = $1::department AND a.submitted = true AND a.chickened_out = false`
 
 // GetReviewStatsQuery gets review statistics for a department
 const GetReviewStatsQuery = `
@@ -71,7 +71,7 @@ SELECT
     COUNT(*) - COUNT(r.id) as pending_count
 FROM applications a
 LEFT JOIN reviews r ON a.id = r.application_id
-WHERE a.department = $1 AND a.submitted = true AND a.chickened_out = false`
+WHERE a.department = $1::department AND a.submitted = true AND a.chickened_out = false`
 
 // GetReviewsByReviewerQuery gets all reviews by a specific reviewer
 const GetReviewsByReviewerQuery = `

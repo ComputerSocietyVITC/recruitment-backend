@@ -7,7 +7,7 @@ const (
 	GetQuestionsByDepartmentQuery = `
 		SELECT id, department, title, body, created_at
 		FROM questions
-		WHERE department = $1
+		WHERE department = $1::department
 		ORDER BY created_at ASC
 	`
 
